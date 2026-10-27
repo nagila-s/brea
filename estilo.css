@@ -1,0 +1,295 @@
+:root {
+  color: #111;
+  background: #d9d9d9;
+  font-family: "Segoe UI", sans-serif;
+  font-size: 14px;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+}
+
+button, select, input { font: inherit; color: inherit; }
+
+.janela { background: #f2f2f2; border-bottom: 1px solid #b5b5b5; }
+
+.menu {
+  display: flex;
+  gap: 2px;
+  padding: 2px 6px 0;
+  background: #fff;
+  border-bottom: 1px solid #d0d0d0;
+}
+
+.menu-item { position: relative; }
+
+.menu-item > button, .ferramentas button, .submenu button, .acoes-dialogo button {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 2px;
+  padding: 3px 8px;
+  cursor: pointer;
+}
+
+.menu-item > button:hover, .ferramentas button:hover, .submenu button:hover, .acoes-dialogo button:hover {
+  background: #e7f0f8;
+  border-color: #b7cbe0;
+}
+
+.submenu {
+  position: absolute;
+  z-index: 5;
+  top: 100%;
+  left: 0;
+  min-width: 220px;
+  padding: 4px;
+  background: #fff;
+  border: 1px solid #b5b5b5;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+}
+
+.menu > button {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 2px;
+  padding: 3px 8px;
+  cursor: pointer;
+}
+
+.submenu { min-width: 240px; }
+
+.submenu button { display: block; width: 100%; text-align: left; }
+
+.submenu hr { border: 0; border-top: 1px solid #e0e0e0; margin: 4px 0; }
+
+.submenu .submenu { top: 0; left: 100%; }
+
+.cinco {
+  padding: 4px 10px 8px;
+  background: #eef3ea;
+  border-top: 1px solid #d5d5d5;
+  font-family: "Segoe UI Symbol", "Segoe UI", sans-serif;
+  font-size: 20px;
+  line-height: 1.35;
+}
+
+.editor.revisor { background: #f6f1dc; }
+
+.perkins-mostra {
+  font-family: "Segoe UI Symbol", "Segoe UI", sans-serif;
+  font-size: 42px;
+  min-height: 48px;
+}
+
+.retoques, .tabela-grade { display: flex; flex-wrap: wrap; gap: 6px; }
+
+.tabela-grade button { min-width: 2.2em; }
+
+dialog { max-width: 520px; }
+
+dialog fieldset { margin: 8px 0; }
+
+dialog label { display: flex; gap: 8px; align-items: center; margin: 4px 0; }
+
+@media print {
+  body[data-impressao="texto"] .painel,
+  body[data-impressao="texto"] .janela,
+  body[data-impressao="texto"] .status,
+  body[data-impressao="texto"] #cinco,
+  body[data-impressao="braille"] .editor,
+  body[data-impressao="braille"] .janela,
+  body[data-impressao="braille"] .status,
+  body[data-impressao="braille"] #cinco { display: none !important; }
+  body[data-impressao="braille"] .miolo { display: block; }
+}
+
+.ferramentas {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 4px 8px;
+  background: #d6e4f0;
+}
+
+.ferramentas.segunda { background: #c5d6ea; }
+
+.separa {
+  width: 1px;
+  align-self: stretch;
+  background: #a9bfd4;
+  margin: 2px 4px;
+}
+
+.cheque { display: flex; align-items: center; gap: 6px; }
+
+.editor {
+  height: 100%;
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  margin: 0;
+  padding: 12px 14px;
+  border: 0;
+  resize: none;
+  background: #fff;
+  font-family: "Segoe UI", sans-serif;
+  font-size: 18px;
+  line-height: 1.45;
+  overflow: auto;
+}
+
+.editor:focus { outline: none; }
+
+.miolo {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+
+.painel {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: #fff;
+  border-left: 1px solid #c8c8c8;
+}
+
+.painel-titulo {
+  padding: 6px 12px;
+  background: #f3f3f3;
+  border-bottom: 1px solid #ddd;
+  font-size: 13px;
+}
+
+#vista {
+  position: relative;
+  flex: 1;
+  overflow: auto;
+  padding: 12px 14px;
+}
+
+.linha-vista {
+  display: block;
+  height: 28px;
+  line-height: 28px;
+  padding: 0 2px;
+  white-space: pre;
+  overflow: hidden;
+  cursor: text;
+}
+
+.linha-vista.atual { background: #e7f4ff; }
+
+.linha-vista.braille {
+  font-family: "Segoe UI Symbol", "Segoe UI", sans-serif;
+  font-size: 22px;
+}
+
+.linha-vista.tinta {
+  font-family: Consolas, "Cascadia Mono", monospace;
+  font-size: 16px;
+}
+
+.linha-vista.codigo {
+  color: #1f4b3a;
+  font-family: Consolas, "Cascadia Mono", monospace;
+  font-size: 15px;
+}
+
+.linha-vista.nao { color: #8a4b08; }
+
+.linha-vista.separador {
+  color: #334;
+  font-size: 12px;
+  background: #f3f6f8;
+  border-top: 1px solid #c5d0d8;
+}
+
+.grupo {
+  display: flex;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  cursor: text;
+}
+
+.grupo.cursor { background: #fff3a0; }
+
+.tinta-texto {
+  font-family: Consolas, "Cascadia Mono", monospace;
+  font-size: 18px;
+  line-height: 1.45;
+  white-space: pre;
+}
+
+.celas { display: flex; gap: 2px; }
+
+.cela {
+  width: 22px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+}
+
+.cela.espaco { width: 14px; }
+
+.grade {
+  display: grid;
+  grid-template-columns: 6px 6px;
+  grid-template-rows: 6px 6px 6px;
+  gap: 2px 3px;
+}
+
+.ponto {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: transparent;
+}
+
+.ponto.aceso { background: #111; }
+
+.status {
+  display: flex;
+  gap: 0;
+  background: #f3f3f3;
+  border-top: 1px solid #c8c8c8;
+  font-size: 13px;
+}
+
+.status span {
+  padding: 4px 10px;
+  border-right: 1px solid #d0d0d0;
+}
+
+#st-car { flex: 1; }
+
+#st-doc { margin-left: auto; border-right: 0; border-left: 1px solid #d0d0d0; }
+
+dialog {
+  border: 1px solid #b5b5b5;
+  padding: 16px;
+  width: min(420px, calc(100vw - 32px));
+}
+
+dialog h2 { margin: 0 0 12px; font-size: 16px; }
+
+dialog label, #busca-simbolo, #lista-simbolos { display: block; margin: 8px 0; }
+
+#lista-simbolos, #busca-simbolo { width: 100%; }
+
+.acoes-dialogo { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+
+.acoes-dialogo button { background: #1f4b3a; color: #fff; border-color: #1f4b3a; }

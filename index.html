@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Braille Fácil</title>
+  <link rel="stylesheet" href="estilo.css">
+</head>
+<body>
+  <header class="janela">
+    <nav class="menu" aria-label="Menu">
+      <div class="menu-item">
+        <button type="button" aria-expanded="false">Arquivo</button>
+        <div class="submenu" hidden>
+          <button type="button" data-acao="novo">Novo</button>
+          <button type="button" data-acao="abrir">Abrir</button>
+          <div class="menu-item">
+            <button type="button" aria-expanded="false">Reabrir...</button>
+            <div id="menu-reabrir" class="submenu" hidden></div>
+          </div>
+          <button type="button" data-acao="salvar">Salvar</button>
+          <button type="button" data-acao="salvar-como">Salvar Como</button>
+          <hr>
+          <button type="button" data-acao="imprimir-texto">Imprimir Texto</button>
+          <button type="button" data-acao="imprimir-braille">Imprimir em Braille</button>
+          <button type="button" data-acao="braille-word">Braille no Word</button>
+          <button type="button" data-acao="tinta-word">Tinta no Word</button>
+          <button type="button" data-acao="puma">Chamar Puma 7</button>
+          <hr>
+          <button type="button" data-acao="sair">Sair</button>
+        </div>
+      </div>
+      <div class="menu-item">
+        <button type="button" aria-expanded="false">Editar</button>
+        <div class="submenu" hidden>
+          <button type="button" data-acao="desfazer">Desfazer</button>
+          <hr>
+          <button type="button" data-acao="recortar">Recortar</button>
+          <button type="button" data-acao="copiar">Copiar</button>
+          <button type="button" data-acao="copiar-meta">Copiar em Meta-Braille</button>
+          <button type="button" data-acao="colar">Colar</button>
+          <hr>
+          <button type="button" data-acao="localizar">Localizar</button>
+          <button type="button" data-acao="substituir">Substituir</button>
+          <hr>
+          <button type="button" data-acao="selecionar">Selecionar Tudo</button>
+          <button type="button" data-acao="dividir">Dividir linhas grandes</button>
+          <button type="button" data-acao="ajuste-codigo">Não Ajustar este trecho</button>
+          <button type="button" data-acao="recuo-codigo">Recuo de 2</button>
+          <button type="button" data-acao="centrar">Centrar linhas</button>
+        </div>
+      </div>
+      <div class="menu-item">
+        <button type="button" aria-expanded="false">Configurar</button>
+        <div class="submenu" hidden>
+          <button type="button" data-acao="configurar">Parâmetros do Programa</button>
+          <button type="button" data-acao="configurar">Configuração da Margem</button>
+          <button type="button" data-acao="fonte">Fonte na tela</button>
+          <button type="button" data-acao="impressora">Impressora Braille</button>
+          <button type="button" data-acao="diretorios">Diretórios</button>
+          <button type="button" data-acao="ortografia-config">Verificador Ortográfico</button>
+          <hr>
+          <button type="button" data-acao="revisor">Modo Revisor</button>
+          <button type="button" data-acao="cinco">5 linhas Braille</button>
+          <hr>
+          <button type="button" data-acao="salvar-config">Salvar Configuração</button>
+          <button type="button" data-acao="carregar-config">Carregar Configuração</button>
+        </div>
+      </div>
+      <div class="menu-item">
+        <button type="button" aria-expanded="false">Gráficos</button>
+        <div class="submenu" hidden>
+          <div class="menu-item">
+            <button type="button" aria-expanded="false">Editor Gráfico</button>
+            <div class="submenu" hidden>
+              <button type="button" data-acao="pintor">Pintor Braille</button>
+              <button type="button" data-acao="monet">Monet</button>
+            </div>
+          </div>
+          <button type="button" data-acao="grafico-vazio">Criar gráfico vazio</button>
+          <hr>
+          <button type="button" data-acao="pagina-graf">Página gráfica</button>
+          <button type="button" data-acao="intercalar-graf">Intercalar gráfico</button>
+          <button type="button" data-acao="embutir-graf">Embutir gráfico</button>
+        </div>
+      </div>
+      <div class="menu-item">
+        <button type="button" aria-expanded="false">Destaques</button>
+        <div class="submenu" hidden>
+          <button type="button" data-acao="quadrinho">Quadrinhos</button>
+          <div class="menu-item">
+            <button type="button" aria-expanded="false">Separador de Textos</button>
+            <div class="submenu" hidden>
+              <button type="button" data-acao="sep-grande">Grande abrangência</button>
+              <button type="button" data-acao="sep-media">Média abrangência</button>
+              <button type="button" data-acao="sep-pequena">Pequena abrangência</button>
+            </div>
+          </div>
+          <div class="menu-item">
+            <button type="button" aria-expanded="false">Variante tipográfica</button>
+            <div class="submenu" hidden>
+              <button type="button" data-acao="var-1">1</button>
+              <button type="button" data-acao="var-2">2</button>
+              <button type="button" data-acao="var-3">3</button>
+            </div>
+          </div>
+          <button type="button" data-acao="nota-transcricao">Nota de transcrição</button>
+          <button type="button" data-acao="pag-tinta">Página em tinta</button>
+        </div>
+      </div>
+      <div class="menu-item">
+        <button type="button" aria-expanded="false">Utilitários</button>
+        <div class="submenu" hidden>
+          <button type="button" data-acao="simbolos">Símbolos Especiais</button>
+          <button type="button" data-acao="perkins">Digitação Perkins</button>
+          <button type="button" data-acao="alto-relevo">Inserir texto em alto-relevo</button>
+          <button type="button" data-acao="texto-tabela">Texto para Tabela</button>
+          <button type="button" data-acao="macro">Macro-processador</button>
+          <hr>
+          <button type="button" data-acao="retoques">Retoques em Braille</button>
+          <hr>
+          <button type="button" data-acao="dos">Converter para formato DOS</button>
+          <button type="button" data-acao="windows">Converter para formato Windows</button>
+          <button type="button" data-acao="eliminar">Eliminar Formatações</button>
+          <hr>
+          <button type="button" data-acao="minuscula">minúscula/MAIÚSCULA</button>
+          <button type="button" data-acao="maiuscula-texto">MAIÚSCULA/minúscula</button>
+          <button type="button" data-acao="tabela">Tabela de Caracteres</button>
+          <hr>
+          <button type="button" data-acao="anotacao">Criar Anotação</button>
+          <button type="button" data-acao="folhear">Folhear anotações</button>
+        </div>
+      </div>
+      <div class="menu-item">
+        <button type="button" aria-expanded="false">Ortografia</button>
+        <div class="submenu" hidden>
+          <button type="button" data-acao="carregar-dic">Carregar dicionário</button>
+          <button type="button" data-acao="liberar-dic">Liberar dicionário</button>
+          <button type="button" data-acao="procurar-erro">Procurar palavra errada</button>
+          <button type="button" data-acao="alternativas">Outras alternativas</button>
+          <div class="menu-item">
+            <button type="button" aria-expanded="false">Manutenção no dicionário</button>
+            <div class="submenu" hidden>
+              <button type="button" data-acao="acrescentar">Acrescentar palavra</button>
+              <button type="button" data-acao="inibir">Inibir palavra</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <button type="button" data-acao="visualizar">Visualizar (F9)</button>
+      <button type="button" data-acao="atualizar">Atualizar (F12)</button>
+      <div class="menu-item">
+        <button type="button" aria-expanded="false">? (Ajuda)</button>
+        <div class="submenu" hidden>
+          <button type="button" data-acao="procurar-atualizacao">Procurar atualização...</button>
+          <button type="button" data-acao="instalar-atualizacao">Instala atualização pendente</button>
+          <button type="button" data-acao="atualizacao-auto">Atualizações automáticas</button>
+          <hr>
+          <button type="button" data-acao="manual">Manual do Braille Fácil</button>
+          <button type="button" data-acao="sobre">Sobre o programa</button>
+        </div>
+      </div>
+    </nav>
+
+    <div class="ferramentas">
+      <button type="button" data-acao="novo" title="Arquivo Novo">Novo</button>
+      <button type="button" data-acao="abrir" title="Abrir">Abrir</button>
+      <button type="button" data-acao="salvar" title="Salvar">Salvar</button>
+      <button type="button" data-acao="imprimir-braille" title="Imprimir">Imprimir</button>
+      <span class="separa"></span>
+      <button type="button" data-acao="recortar" title="Cortar seleção">Recortar</button>
+      <button type="button" data-acao="copiar" title="Copiar seleção">Copiar</button>
+      <button type="button" data-acao="colar" title="Colar">Colar</button>
+      <button type="button" data-acao="fonte" title="Fonte na tela">A</button>
+      <button type="button" data-acao="tabela" title="Tabela de caracteres">Tabela</button>
+      <label class="cheque" title="1 ou 5 linhas braille"><input id="cinco-linhas" type="checkbox"> Visualizar 5 linhas (F5)</label>
+      <button type="button" data-acao="centrar" title="Centralizado">Centrar</button>
+      <button type="button" data-acao="grifo" title="Aplicar grifo da lista ao lado">Grifo</button>
+      <select id="grifo" title="Selecionar grifo: Simples ou Composto?" aria-label="Tipo de grifo">
+        <option value="simples">* Simples</option>
+        <option value="composto">$* Composto</option>
+      </select>
+      <button type="button" data-acao="ortografia-config" title="Verificação ortográfica">Ortografia</button>
+    </div>
+
+    <div class="ferramentas segunda">
+      <button type="button" data-acao="pagina" title="Quebra de página">Pág.</button>
+      <button type="button" data-acao="recuo-codigo" title="Trecho com recuo de 2">R±</button>
+      <button type="button" data-acao="ajuste-codigo" title="Inibe ajuste de trecho">F±</button>
+      <button type="button" data-acao="silabas-codigo" title="Separação de sílabas no trecho">S±</button>
+      <button type="button" data-acao="ingles-codigo" title="Maiúsculas inglesas no trecho">I±</button>
+      <button type="button" data-acao="perkins" title="Digitação Perkins">Perkins</button>
+      <button type="button" data-acao="simbolos" title="Símbolos especiais">Símbolos</button>
+      <button type="button" data-acao="informatica" title="Delimitador informático">Informática</button>
+      <button type="button" data-acao="pag-tinta" title="Página em tinta">Pág.Tinta</button>
+      <button type="button" data-acao="anotacao" title="Anotações">Anotação</button>
+      <button type="button" data-acao="quadrinho-ajuda" title="Pedir orientação">Peça Orient.</button>
+      <button type="button" data-acao="parenteses" title="Parênteses auxiliares">?*</button>
+      <label>Codificação
+        <select id="codigo">
+          <option value="unificado">Braille unificado</option>
+          <option value="antigo">Braille antigo</option>
+        </select>
+      </label>
+      <label class="cheque"><input id="tinta" type="checkbox"> Tinta</label>
+    </div>
+    <div id="cinco" class="cinco" hidden></div>
+  </header>
+
+  <div class="miolo">
+    <textarea id="texto" class="editor" spellcheck="false" wrap="off" aria-label="Texto digitado"></textarea>
+    <section class="painel" aria-label="Braille">
+      <div id="painel-titulo" class="painel-titulo">Braille</div>
+      <div id="vista"></div>
+    </section>
+  </div>
+
+  <footer class="status">
+    <span id="st-lin">Lin: 1</span>
+    <span id="st-col">Col: 1</span>
+    <span id="st-sel">Sel: 0 | 1</span>
+    <span id="st-car"> </span>
+    <span id="st-doc">sem título</span>
+    <span id="st-revisor"></span>
+  </footer>
+
+  <input id="arquivo" type="file" accept=".txt,text/plain" hidden>
+  <input id="arquivo-config" type="file" accept=".json,application/json" hidden>
+
+  <dialog id="config">
+    <h2>Configuração do Braille Fácil</h2>
+    <fieldset>
+      <legend>Codificação Braille</legend>
+      <p>A codificação em uso está na barra. Os sinais abaixo valem para a tradução.</p>
+      <label class="cheque"><input id="matematica" type="checkbox" checked> Matemática com crase</label>
+      <label class="cheque"><input id="maiuscula" type="checkbox" checked> Sinal de maiúscula</label>
+      <label class="cheque"><input id="maiuscula-palavra" type="checkbox" checked> Dois sinais na palavra inteira</label>
+      <label class="cheque"><input id="numero" type="checkbox" checked> Sinal de número</label>
+    </fieldset>
+    <fieldset>
+      <legend>Cabeçalho</legend>
+      <label class="cheque"><input id="com-titulo" type="checkbox" checked> Com título e numeração de páginas</label>
+      <label class="cheque"><input id="tira-brancas" type="checkbox" checked> Elimina linhas brancas após o cabeçalho</label>
+      <label>Numeração de páginas
+        <select id="numeracao">
+          <option value="0">Padrão</option>
+          <option value="1">À direita</option>
+          <option value="2">Ao centro (Portugal)</option>
+          <option value="3">À esquerda</option>
+        </select>
+      </label>
+    </fieldset>
+    <fieldset>
+      <legend>Área de impressão</legend>
+      <label>Colunas <input id="colunas-padrao" type="number" min="4" max="80" value="32"></label>
+      <label>Linhas <input id="linhas-padrao" type="number" min="1" max="80" value="28"></label>
+      <label>Coluna máxima <input id="max-col" type="number" min="10" max="200" value="70"></label>
+      <label class="cheque"><input id="quebra-auto" type="checkbox"> Quebra automática</label>
+      <label class="cheque"><input id="auto-formata" type="checkbox" checked> Auto-formata</label>
+      <label class="cheque"><input id="interponto" type="checkbox"> Interponto</label>
+      <label class="cheque"><input id="silabas-padrao" type="checkbox" checked> Separa sílabas</label>
+    </fieldset>
+    <div class="acoes-dialogo">
+      <button type="button" id="config-fechar">OK</button>
+    </div>
+  </dialog>
+
+  <dialog id="simbolos">
+    <h2>Símbolos</h2>
+    <input id="busca-simbolo" type="search" placeholder="soma, raiz, conjunto" aria-label="Buscar símbolo">
+    <select id="lista-simbolos" size="8" aria-label="Símbolos"></select>
+    <div class="acoes-dialogo">
+      <button type="button" id="inserir-simbolo">Inserir</button>
+      <button type="button" id="simbolos-fechar">Fechar</button>
+    </div>
+  </dialog>
+
+  <dialog id="localizar">
+    <h2>Localizar</h2>
+    <input id="busca" type="search" aria-label="Texto a localizar">
+    <div class="acoes-dialogo">
+      <button type="button" id="busca-proxima">Próxima</button>
+      <button type="button" id="localizar-fechar">Fechar</button>
+    </div>
+  </dialog>
+
+  <dialog id="substituir-dialogo">
+    <h2>Substituir</h2>
+    <label>Localizar <input id="troca-de" type="search"></label>
+    <label>Substituir por <input id="troca-para" type="text"></label>
+    <div class="acoes-dialogo">
+      <button type="button" id="troca-uma">Substituir</button>
+      <button type="button" id="troca-todas">Substituir todas</button>
+      <button type="button" id="substituir-fechar">Fechar</button>
+    </div>
+  </dialog>
+
+  <dialog id="centrar-dialogo">
+    <h2>Centrar linhas</h2>
+    <p>Centragem é física? Só confirme se não vai autoformatar.</p>
+    <div class="acoes-dialogo">
+      <button type="button" id="centrar-fisica">Física</button>
+      <button type="button" id="centrar-espacos">Doze espaços</button>
+      <button type="button" id="centrar-cancela">Cancelar</button>
+    </div>
+  </dialog>
+
+  <dialog id="quadro">
+    <h2>Quadrinho</h2>
+    <label class="cheque"><input type="radio" name="quadro" value="padrao" checked> Padrão</label>
+    <label class="cheque"><input type="radio" name="quadro" value="ajuda"> Pedir ajuda</label>
+    <label class="cheque"><input type="radio" name="quadro" value="figura"> Legenda de figura</label>
+    <div class="acoes-dialogo">
+      <button type="button" id="quadro-ok">Ok</button>
+      <button type="button" id="quadro-cancela">Cancela</button>
+    </div>
+  </dialog>
+
+  <dialog id="perkins">
+    <h2>Digitação Perkins</h2>
+    <p>f d s j k l são os pontos 1 2 3 4 5 6. Espaço limpa. Enter insere a cela.</p>
+    <p id="perkins-mostra" class="perkins-mostra"></p>
+    <div class="acoes-dialogo">
+      <button type="button" id="perkins-inserir">Inserir</button>
+      <button type="button" id="perkins-fechar">Fechar</button>
+    </div>
+  </dialog>
+
+  <dialog id="retoques">
+    <h2>Retoques em Braille</h2>
+    <div id="retoques-pontos" class="retoques"></div>
+    <div class="acoes-dialogo">
+      <button type="button" id="retoques-aplicar">Aplicar</button>
+      <button type="button" id="retoques-fechar">Fechar</button>
+    </div>
+  </dialog>
+
+  <dialog id="tabela">
+    <h2>Tabela de Caracteres</h2>
+    <div id="tabela-grade" class="tabela-grade"></div>
+    <div class="acoes-dialogo">
+      <button type="button" id="tabela-fechar">Fechar</button>
+    </div>
+  </dialog>
+
+  <dialog id="aviso">
+    <h2 id="aviso-titulo"></h2>
+    <p id="aviso-texto"></p>
+    <div class="acoes-dialogo">
+      <button type="button" id="aviso-fechar">Fechar</button>
+    </div>
+  </dialog>
+
+  <script type="module" src="app.js?edicao=13"></script>
+</body>
+</html>
