@@ -1,101 +1,139 @@
-function normalizar(texto) {
-  return texto.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase().replace(/\s+/g, " ").trim();
+// Val do Delphi (@ValLong): espaços à esquerda, sinal, "$" para hexadecimal. Num erro devolve o
+// que já leu e a posição do caractere ruim (o original usa esse valor parcial).
+function valLong(texto) {
+  let i = 0;
+  while (texto[i] === " ") i += 1;
+  let sinal = 1;
+  if (texto[i] === "+" || texto[i] === "-") {
+    if (texto[i] === "-") sinal = -1;
+    i += 1;
+  }
+  const hexa = texto[i] === "$";
+  if (hexa) i += 1;
+  const inicio = i;
+  let valor = 0;
+  for (; i < texto.length; i += 1) {
+    const digito = parseInt(texto[i], hexa ? 16 : 10);
+    if (Number.isNaN(digito)) break;
+    valor = valor * (hexa ? 16 : 10) + digito;
+  }
+  const erro = i < texto.length || i === inicio ? i + 1 : 0;
+  return { valor: sinal * valor, erro };
 }
 
+const COMENTARIO = { tipo: "comentario", fecha: false, rotulo: "comentário, não vai para o braille" };
+
+function invalido(linha) {
+  return {
+    tipo: "invalido",
+    fecha: true,
+    imprimir: true,
+    aviso: `Comando inválido (linha {linha}): ${linha}.`,
+    rotulo: "comando inválido, sai como texto",
+  };
+}
+
+// 0049BC94, o intérprete de comandos do CompilaRascunho. Devolve null quando a linha é texto.
+// Campos: fecha (esvazia o parágrafo em curso antes de agir), imprimir (a linha também sai
+// como texto) e aviso (mensagem que o original mostrava).
 function classificar(linha) {
-  const bruto = linha.trim();
-  if (!/^<[^>\n]*>$/.test(bruto)) return null;
-  const miolo = bruto.slice(1, -1).trim();
-  if (/^\*{3}[\s\S]*\*{3}$/.test(miolo)) {
-    return { tipo: "anotacao", rotulo: "anotação, não impressa" };
-  }
+  // 0049CADB: comando é a linha que começa com "<" na coluna 1 (o fim já vem aparado por
+  // 0049BBE0); com espaço antes, é texto. "<" sozinho também é texto.
+  const s = linha.trimEnd();
+  if (!s.startsWith("<") || s.length === 1) return null;
+  if (s.toUpperCase() === "<P>") return { tipo: "quebra", fecha: true, rotulo: "quebra de página" };
+  const op = s[1].toUpperCase();
+  const par = s.slice(2, 4);
 
-  const corpo = miolo.replace(/^\*\s*/, "");
-  const normal = normalizar(corpo);
-  let medida = normal.match(/^(\d+) caracteres x (\d+) linhas$/);
-  if (!medida) medida = normal.match(/^caracteres ?(\d+) ?x ?(\d+) ?linhas$/);
-  if (medida) {
-    return {
-      tipo: "formato",
-      colunas: Number(medida[1]),
-      linhas: Number(medida[2]),
-      rotulo: `página ${medida[1]}×${medida[2]}`,
-    };
+  if (op === "T") {
+    if (par === "->") return { tipo: "titulo", modo: "off", fecha: true, rotulo: "sem título de página" };
+    if (par === "+>") return { tipo: "titulo", modo: "on", fecha: true, rotulo: "título de página" };
+    if (s.length >= 5 && (s[2] === "+" || s[2] === "*") && /[0-9]/.test(s[3]) && s.endsWith(">")) {
+      const bruto = s.slice(3, -1);
+      const lido = valLong(bruto);
+      let numero = lido.valor;
+      let aviso = null;
+      if (lido.erro || numero < 1 || numero > 10000) {
+        if (numero < 1 || numero > 10000) numero = 1;
+        aviso = `Número da página INVÁLIDO: "${bruto}". Valor considerado: "${numero}".`;
+      }
+      const romano = s[2] === "*";
+      return {
+        tipo: "titulo",
+        modo: "numero",
+        numero,
+        romano,
+        aviso,
+        fecha: true,
+        rotulo: romano ? `paginação romana a partir de ${numero}` : `título com número, a partir de ${numero}`,
+      };
+    }
+    // Qualquer outro <T...> é título: do 3º caractere ao fim, sem o ">" final e sem aparar.
+    const texto = s.endsWith(">") ? s.slice(2, -1) : s.slice(2);
+    return { tipo: "titulo-texto", texto, fecha: true, rotulo: `título: ${texto.trim()}` };
   }
-  if (normal === "com interponto" || normal === "sem interponto") {
-    return { tipo: "interponto", ligado: normal.startsWith("com"), rotulo: normal };
+  if (op === "F") {
+    if (par === "->") return { tipo: "ajuste", ligado: false, fecha: true, rotulo: "auto-ajuste desligado" };
+    if (par === "+>") return { tipo: "ajuste", ligado: true, fecha: true, rotulo: "auto-ajuste ligado" };
+    if (par === "*>") return { tipo: "estrangeiro", fecha: true, rotulo: "trecho musical ou estrangeiro" };
+    return { ...COMENTARIO, fecha: true };
   }
-  if (/^(com|sem) separacao de silabas$/.test(normal)) {
-    const ligado = normal.startsWith("com");
-    return {
-      tipo: "silabas",
-      ligado,
-      rotulo: ligado ? "com separação de sílabas" : "sem separação de sílabas",
-    };
+  if (op === "S") {
+    if (par === "->") return { tipo: "silabas", ligado: false, fecha: false, rotulo: "sem separação de sílabas" };
+    if (par === "+>") return { tipo: "silabas", ligado: true, fecha: false, rotulo: "com separação de sílabas" };
+    return COMENTARIO;
   }
-
-  if (/^\d+$/.test(corpo)) {
-    return { tipo: "transpaginacao", numero: corpo, rotulo: `página em tinta ${corpo}` };
+  if (op === "R") {
+    if (par === "+>") return { tipo: "recuo", ligado: true, fecha: true, rotulo: "recuo de dois" };
+    if (par === "->") return { tipo: "recuo", ligado: false, fecha: true, rotulo: "sem recuo" };
+    return { ...COMENTARIO, fecha: true };
   }
-
-  const letra = corpo.match(/^([a-zA-Z])(.*)$/);
-  if (!letra) return { tipo: "desconhecido", rotulo: bruto };
-  const op = letra[1].toUpperCase();
-  const resto = letra[2];
-
-  if (op === "P" && resto.trim() === "") return { tipo: "quebra", rotulo: "quebra de página" };
-  if (op === "F" && resto === "+") return { tipo: "ajuste", ligado: true, rotulo: "auto-ajuste ligado" };
-  if (op === "F" && resto === "-") return { tipo: "ajuste", ligado: false, rotulo: "auto-ajuste desligado" };
-  if (op === "F" && resto === "*") return { tipo: "estrangeiro", rotulo: "trecho musical ou estrangeiro" };
-  if (op === "T" && resto === "-") return { tipo: "titulo", modo: "off", rotulo: "sem título de página" };
-  if (op === "T" && resto === "+") return { tipo: "titulo", modo: "on", rotulo: "título de página" };
-  if (op === "T" && /^\*\d+$/.test(resto)) {
-    return {
-      tipo: "titulo",
-      modo: "numero",
-      numero: Number(resto.slice(1)),
-      romano: true,
-      rotulo: `paginação romana a partir de ${resto.slice(1)}`,
-    };
+  if (op === "I") {
+    // O manual diz o contrário, mas <I+> grava 1 em 660D28 e o tradutor usa a maiúscula inglesa.
+    if (par === "+>") return { tipo: "ingles", ligado: true, fecha: false, rotulo: "maiúsculas inglesas" };
+    if (par === "->") return { tipo: "ingles", ligado: false, fecha: false, rotulo: "sem maiúsculas inglesas" };
+    return COMENTARIO;
   }
-  if (op === "T" && /^\+\d+$/.test(resto)) {
-    return {
-      tipo: "titulo",
-      modo: "numero",
-      numero: Number(resto.slice(1)),
-      romano: false,
-      rotulo: `título com número, a partir de ${resto.slice(1)}`,
-    };
+  if (op === "G") {
+    // <G[ |+|*]coluna arquivo>. Sem ">" ou sem coluna e arquivo: inválido, e a linha sai como texto.
+    if (!s.endsWith(">")) return invalido(s);
+    const miolo = s.slice(2, -1).trim();
+    const resto = miolo.slice(1).trim();
+    if (!miolo || !resto) return invalido(s);
+    if (!resto.includes(" ")) {
+      return { ...invalido(s), aviso: "Gráfico sem informação de coluna na linha {linha}." };
+    }
+    return { tipo: "grafico-arquivo", modo: miolo[0], texto: resto, fecha: true, rotulo: `gráfico ${resto}` };
   }
-  if (op === "T" && /^\s+\S/.test(resto)) {
-    return { tipo: "titulo-texto", texto: resto.trim(), rotulo: `título: ${resto.trim()}` };
-  }
-  if (op === "S" && resto === "+") return { tipo: "silabas", ligado: true, rotulo: "com separação de sílabas" };
-  if (op === "S" && resto === "-") return { tipo: "silabas", ligado: false, rotulo: "sem separação de sílabas" };
-  if (op === "I" && resto === "+") return { tipo: "ingles", ligado: false, rotulo: "sem maiúsculas inglesas" };
-  if (op === "I" && resto === "-") return { tipo: "ingles", ligado: true, rotulo: "maiúsculas inglesas" };
-  if (op === "R" && resto === "+") return { tipo: "recuo", ligado: true, rotulo: "recuo de dois" };
-  if (op === "R" && resto === "-") return { tipo: "recuo", ligado: false, rotulo: "sem recuo" };
   if (op === "M") {
-    const restoCru = bruto.slice(1, -1).slice(1);
-    if (restoCru.trim() === "") return { tipo: "margem", texto: "", rotulo: "sem margem" };
+    const cru = s.slice(2);
+    if (!cru || !cru.endsWith(">")) return invalido(s);
+    const restoCru = cru.slice(0, -1);
+    if (restoCru.trim() === "") return { tipo: "margem", texto: "", fecha: true, rotulo: "sem margem" };
     const texto = restoCru.startsWith(" ") ? restoCru.trim() : restoCru;
-    return { tipo: "margem", texto, rotulo: `margem: ${texto.trim()}` };
+    return { tipo: "margem", texto, fecha: true, rotulo: `margem: ${texto.trim()}` };
   }
-  if (op === "G" && resto === "+") return { tipo: "grafico", ligado: true, rotulo: "modo gráfico" };
-  if (op === "G" && resto === "-") return { tipo: "grafico", ligado: false, rotulo: "fim do modo gráfico" };
-  if (op === "G" && /^\s+\S/.test(resto)) {
-    return { tipo: "grafico-arquivo", texto: resto.trim(), rotulo: `gráfico ${resto.trim()}` };
+  if (/[0-9]/.test(s[1])) {
+    // Sem ">" é texto. Com ">", o Val vale como página em tinta mesmo se falhar no meio
+    // (fica o valor parcial), e nesse caso a linha também sai como texto.
+    if (!s.endsWith(">")) return null;
+    const lido = valLong(s.slice(1, -1));
+    return {
+      tipo: "transpaginacao",
+      numero: String(lido.valor),
+      fecha: false,
+      imprimir: lido.erro !== 0,
+      rotulo: `página em tinta ${lido.valor}`,
+    };
   }
-  return { tipo: "desconhecido", rotulo: bruto };
+  // Qualquer outro caractere depois do "<": a linha é ignorada em silêncio (0049C642).
+  // Inclui as anotações <*** ***> e as notas de configuração como <*34 caracteres x 28 linhas>.
+  if (/^<\*{3}[\s\S]*\*{3}>$/.test(s)) return { ...COMENTARIO, tipo: "anotacao", rotulo: "anotação, não impressa" };
+  return COMENTARIO;
 }
 
 function aplicar(doc, comando) {
-  if (comando.tipo === "formato") {
-    doc.colunas = comando.colunas;
-    doc.linhasPagina = comando.linhas;
-  } else if (comando.tipo === "interponto") doc.interponto = comando.ligado;
-  else if (comando.tipo === "silabas") doc.silabas = comando.ligado;
+  if (comando.tipo === "silabas") doc.silabas = comando.ligado;
   else if (comando.tipo === "ajuste") doc.ajuste = comando.ligado;
   else if (comando.tipo === "titulo-texto") doc.titulo = comando.texto;
   else if (comando.tipo === "titulo" && comando.modo === "off") doc.titula = false;
@@ -111,7 +149,6 @@ function aplicar(doc, comando) {
   } else if (comando.tipo === "recuo") doc.recuo = comando.ligado;
   else if (comando.tipo === "ingles") doc.ingles = comando.ligado;
   else if (comando.tipo === "margem") doc.margem = comando.texto;
-  else if (comando.tipo === "grafico") doc.grafico = comando.ligado;
 }
 
 function preparar(linhas) {
@@ -147,7 +184,7 @@ function resumo(info) {
   if (info.interponto === false) partes.push("sem interponto");
   if (info.silabas === true) partes.push("com separação de sílabas");
   if (info.silabas === false) partes.push("sem separação de sílabas");
-  if (info.titula && info.titulo) partes.push(`título “${info.titulo}”`);
+  if (info.titula && info.titulo.trim()) partes.push(`título “${info.titulo.trim()}”`);
   else if (info.titula) partes.push("com título");
   if (info.numera) partes.push(`número desde ${info.numeroInicial ?? 1}`);
   if (info.romano) partes.push("numeração romana");
