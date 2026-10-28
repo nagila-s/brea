@@ -29,8 +29,9 @@ assert.deepEqual(pontos("Casa"), ["000101", "100100", "100000", "011100", "10000
 
 assert.deepEqual(pontos("(", { codigo: "antigo" }), ["011011"]);
 assert.deepEqual(pontos(")", { codigo: "antigo" }), ["011011"]);
-assert.deepEqual(pontos("(", { codigo: "unificado" }), ["110001"]);
-assert.deepEqual(pontos(")", { codigo: "unificado" }), ["001110"]);
+// Unificado: o tradutor (0047D3E0) escreve "(." e "\)" -> 126 3 e 6 345.
+assert.deepEqual(pontos("(", { codigo: "unificado" }), ["110001", "001000"]);
+assert.deepEqual(pontos(")", { codigo: "unificado" }), ["000001", "001110"]);
 
 assert.deepEqual(pontos("`+", { matematica: true, codigo: "unificado" }), ["011010"]);
 assert.deepEqual(pontos("`*", { matematica: true, codigo: "unificado" }), ["011001"]);

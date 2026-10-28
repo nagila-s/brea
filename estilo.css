@@ -142,17 +142,29 @@ dialog label { display: flex; gap: 8px; align-items: center; margin: 4px 0; }
   border: 0;
   resize: none;
   background: #fff;
-  font-family: "Segoe UI", sans-serif;
-  font-size: 18px;
+  /* Monoespaçada e com a largura das colunas braille: o texto quebra perto de onde o braille quebra. */
+  justify-self: start;
+  margin-left: 56px;
+  max-width: calc(100% - 56px);
+  font-family: Consolas, "Cascadia Mono", monospace;
+  font-size: 22px;
   line-height: 1.45;
-  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  overflow-x: hidden;
+  overflow-y: auto;
+  /* Os dois lados rolam juntos: a barra fica só na vista braille. */
+  scrollbar-width: none;
 }
+
+.editor::-webkit-scrollbar { display: none; }
 
 .editor:focus { outline: none; }
 
 .miolo {
   flex: 1;
   min-height: 0;
+  background: #fff;
   display: grid;
   grid-template-columns: 1fr 1fr;
 }
@@ -182,8 +194,8 @@ dialog label { display: flex; gap: 8px; align-items: center; margin: 4px 0; }
 
 .linha-vista {
   display: block;
-  height: 28px;
-  line-height: 28px;
+  height: var(--faixa, 26px);
+  line-height: var(--faixa, 26px);
   padding: 0 2px;
   white-space: pre;
   overflow: hidden;
@@ -194,18 +206,18 @@ dialog label { display: flex; gap: 8px; align-items: center; margin: 4px 0; }
 
 .linha-vista.braille {
   font-family: "Segoe UI Symbol", "Segoe UI", sans-serif;
-  font-size: 22px;
+  font-size: min(22px, calc(var(--faixa, 26px) * 0.85));
 }
 
 .linha-vista.tinta {
   font-family: Consolas, "Cascadia Mono", monospace;
-  font-size: 16px;
+  font-size: min(16px, calc(var(--faixa, 26px) * 0.7));
 }
 
 .linha-vista.codigo {
   color: #1f4b3a;
   font-family: Consolas, "Cascadia Mono", monospace;
-  font-size: 15px;
+  font-size: min(15px, calc(var(--faixa, 26px) * 0.65));
 }
 
 .linha-vista.nao { color: #8a4b08; }

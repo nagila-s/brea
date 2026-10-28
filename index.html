@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Braille Fácil</title>
-  <link rel="stylesheet" href="estilo.css">
+  <link rel="stylesheet" href="estilo.css?edicao=21">
 </head>
 <body>
   <header class="janela">
@@ -208,7 +208,7 @@
   </header>
 
   <div class="miolo">
-    <textarea id="texto" class="editor" spellcheck="false" wrap="off" aria-label="Texto digitado"></textarea>
+    <textarea id="texto" class="editor" spellcheck="false" wrap="soft" aria-label="Texto digitado"></textarea>
     <section class="painel" aria-label="Braille">
       <div id="painel-titulo" class="painel-titulo">Braille</div>
       <div id="vista"></div>
@@ -252,12 +252,12 @@
     </fieldset>
     <fieldset>
       <legend>Área de impressão</legend>
-      <label>Colunas <input id="colunas-padrao" type="number" min="4" max="80" value="32"></label>
+      <label>Colunas <input id="colunas-padrao" type="number" min="4" max="80" value="34"></label>
       <label>Linhas <input id="linhas-padrao" type="number" min="1" max="80" value="28"></label>
       <label>Coluna máxima <input id="max-col" type="number" min="10" max="200" value="70"></label>
-      <label class="cheque"><input id="quebra-auto" type="checkbox"> Quebra automática</label>
+      <label class="cheque"><input id="quebra-auto" type="checkbox" checked> Quebra automática</label>
       <label class="cheque"><input id="auto-formata" type="checkbox" checked> Auto-formata</label>
-      <label class="cheque"><input id="interponto" type="checkbox"> Interponto</label>
+      <label class="cheque"><input id="interponto" type="checkbox" checked> Interponto</label>
       <label class="cheque"><input id="silabas-padrao" type="checkbox" checked> Separa sílabas</label>
     </fieldset>
     <div class="acoes-dialogo">
@@ -351,6 +351,6 @@
     </div>
   </dialog>
 
-  <script type="module" src="app.js?edicao=13"></script>
+  <script type="module" src="app.js?edicao=24"></script>
 </body>
 </html>

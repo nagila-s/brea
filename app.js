@@ -1,7 +1,7 @@
 import { tabelas } from "./tabelas.js";
-import { classificar, preparar, resumo } from "./comandos.js?edicao=9";
-import { formatar } from "./pagina.js?edicao=13";
-import { caractereMeta, metaDePontos, nomesPontos, traduzir, unicodeDaCela } from "./motor.js";
+import { classificar, preparar, resumo } from "./comandos.js?edicao=24";
+import { formatar } from "./pagina.js?edicao=24";
+import { caractereMeta, metaDePontos, nomesPontos, traduzir, unicodeDaCela } from "./motor.js?edicao=24";
 import {
   apararFim,
   centrarFisico,
@@ -27,8 +27,10 @@ const estado = {
   formato: null,
   formatoTinta: false,
   formatoSujo: true,
-  interno: false,
-  fonte: 18,
+  rolagemVista: 0,
+  rolagemTexto: 0,
+  quadroTexto: 0,
+  fonte: 22,
   dicionario: null,
   inibidas: new Set(),
   perkins: [0, 0, 0, 0, 0, 0],
@@ -50,7 +52,7 @@ function opcoes() {
     comTitulo: $("com-titulo").checked,
     tiraBrancas: $("tira-brancas").checked,
     numeracao: Number($("numeracao").value) || 0,
-    colunasPadrao: Number($("colunas-padrao").value) || 32,
+    colunasPadrao: Number($("colunas-padrao").value) || 34,
     linhasPadrao: Number($("linhas-padrao").value) || 28,
     autoFormata: $("auto-formata").checked,
     silabas: $("silabas-padrao").checked,
@@ -121,7 +123,148 @@ function grade(dots) {
   return caixa;
 }
 
-const ALTURA_LINHA = 28;
+// As duas colunas rolam juntas. A linha do texto no topo do editor fica pareada com a
+// primeira faixa que ela gerou na vista, e as faixas têm a altura da linha do editor:
+// trechos que não quebram seguem lado a lado na tela inteira.
+function alturaLinha() {
+  const altura = parseFloat(getComputedStyle($("texto")).lineHeight);
+  return Number.isFinite(altura) && altura > 0 ? altura : 26;
+}
+
+// O editor quebra as linhas na largura das colunas braille, então uma linha do texto pode
+// ocupar várias linhas na tela. Um espelho invisível, com a mesma fonte e largura, mede onde
+// cada linha do texto começa: topos[L] em px, topos[total] = altura do conteúdo.
+function geometriaDoTexto() {
+  const area = $("texto");
+  const estilo = getComputedStyle(area);
+  const largura = area.clientWidth - parseFloat(estilo.paddingLeft) - parseFloat(estilo.paddingRight);
+  const valor = area.value;
+  const chave = `${largura}|${estilo.fontFamily}|${estilo.fontSize}|${estilo.lineHeight}`;
+  if (estado.geometria && estado.geometria.chave === chave && estado.geometria.valor === valor) {
+    return estado.geometria.topos;
+  }
+  if (!estado.espelho) {
+    estado.espelho = document.createElement("div");
+    estado.espelho.setAttribute("aria-hidden", "true");
+    Object.assign(estado.espelho.style, {
+      position: "absolute",
+      visibility: "hidden",
+      left: "-99999px",
+      top: "0",
+      whiteSpace: "pre-wrap",
+      overflowWrap: "break-word",
+    });
+    document.body.append(estado.espelho);
+  }
+  const espelho = estado.espelho;
+  Object.assign(espelho.style, {
+    width: `${largura}px`,
+    fontFamily: estilo.fontFamily,
+    fontSize: estilo.fontSize,
+    fontWeight: estilo.fontWeight,
+    lineHeight: estilo.lineHeight,
+    letterSpacing: estilo.letterSpacing,
+    tabSize: estilo.tabSize,
+  });
+  const linhas = valor.split("\n");
+  const pedaco = document.createDocumentFragment();
+  for (const linha of linhas) {
+    const div = document.createElement("div");
+    div.textContent = linha || "​";
+    pedaco.append(div);
+  }
+  espelho.replaceChildren(pedaco);
+  const topos = Array.from(espelho.children, (div) => div.offsetTop);
+  topos.push(espelho.offsetHeight);
+  espelho.replaceChildren();
+  estado.geometria = { chave, valor, topos };
+  return topos;
+}
+
+// Posição no editor (px) <-> linha do texto com fração (3.5 = metade da linha 3 na tela).
+function linhaDoTopo(topos, y) {
+  const total = topos.length - 1;
+  if (total <= 0 || y <= 0) return 0;
+  let baixo = 0;
+  let alto = total - 1;
+  while (baixo < alto) {
+    const meio = (baixo + alto + 1) >> 1;
+    if (topos[meio] <= y) baixo = meio;
+    else alto = meio - 1;
+  }
+  const altura = topos[baixo + 1] - topos[baixo];
+  return baixo + (altura > 0 ? Math.min(1, (y - topos[baixo]) / altura) : 0);
+}
+
+function topoDaLinha(topos, posicaoTexto) {
+  const total = topos.length - 1;
+  if (total <= 0) return 0;
+  const linha = Math.min(total - 1, Math.max(0, Math.floor(posicaoTexto)));
+  const fracao = Math.min(1, Math.max(0, posicaoTexto - linha));
+  return topos[linha] + fracao * (topos[linha + 1] - topos[linha]);
+}
+
+// A largura do editor é a das colunas braille (em caracteres da fonte monoespaçada).
+function ajustarLarguraEditor() {
+  const largura = `calc(${colunasAtuais()}ch + 28px)`;
+  if ($("texto").style.width !== largura) $("texto").style.width = largura;
+}
+
+// inicio[L] = primeira faixa gerada pela linha L do texto (ou pela seguinte que gerou alguma).
+function mapaDeLinhas(formato, total) {
+  if (formato.mapa && formato.mapa.length === total + 1) return formato.mapa;
+  const inicio = new Array(total + 1).fill(formato.linhas.length);
+  let maior = -1;
+  let proxima = 0;
+  formato.linhas.forEach((item, indice) => {
+    maior = Math.max(maior, item.origem ?? 0);
+    while (proxima < total && proxima <= maior) {
+      inicio[proxima] = indice;
+      proxima += 1;
+    }
+  });
+  formato.mapa = inicio;
+  return inicio;
+}
+
+function faixaDaLinha(inicio, posicaoTexto) {
+  const total = inicio.length - 1;
+  if (total <= 0) return 0;
+  const linha = Math.min(total - 1, Math.max(0, Math.floor(posicaoTexto)));
+  const fracao = Math.min(1, Math.max(0, posicaoTexto - linha));
+  return inicio[linha] + fracao * (inicio[linha + 1] - inicio[linha]);
+}
+
+function linhaDaFaixa(inicio, posicaoVista) {
+  const total = inicio.length - 1;
+  if (total <= 0 || posicaoVista <= 0) return 0;
+  let baixo = 0;
+  let alto = total - 1;
+  while (baixo < alto) {
+    const meio = (baixo + alto + 1) >> 1;
+    if (inicio[meio] <= posicaoVista) baixo = meio;
+    else alto = meio - 1;
+  }
+  const largura = inicio[baixo + 1] - inicio[baixo];
+  return baixo + (largura > 0 ? Math.min(1, Math.max(0, (posicaoVista - inicio[baixo]) / largura)) : 0);
+}
+
+// Faixas que correspondem à linha do cursor, numa passada só (de trás para frente).
+function faixasDoCursor(linhas, linhaCursor) {
+  const cobre = new Set();
+  let primeira = null;
+  let proxima = null;
+  for (let indice = linhas.length - 1; indice >= 0; indice -= 1) {
+    const item = linhas[indice];
+    if (item.separador) continue;
+    if (item.origem <= linhaCursor && (proxima == null || proxima > linhaCursor)) {
+      cobre.add(indice);
+      primeira = indice;
+    }
+    proxima = item.origem;
+  }
+  return { cobre, primeira: primeira ?? 0 };
+}
 
 function vistaAtual(tinta) {
   if (!estado.formato || estado.formatoTinta !== tinta || estado.formatoSujo) {
@@ -132,17 +275,9 @@ function vistaAtual(tinta) {
   return estado.formato;
 }
 
-function cobreCursor(linhas, indice, linhaCursor) {
-  const item = linhas[indice];
-  if (!item || item.separador) return false;
-  const proxima = linhas.slice(indice + 1).find((linha) => !linha.separador);
-  return item.origem <= linhaCursor && (proxima == null || proxima.origem > linhaCursor);
-}
-
 function desenharFaixa(item, cursor) {
   const faixa = document.createElement("div");
   faixa.className = `linha-vista ${item.tipo}`;
-  faixa.style.height = `${ALTURA_LINHA}px`;
   faixa.dataset.linha = String(item.origem ?? 0);
   if (item.separador) faixa.classList.add("separador");
   if (item.nao) faixa.classList.add("nao");
@@ -179,56 +314,81 @@ function atualizarStatus() {
   return cursor;
 }
 
-function desenharVista(seguirCursor) {
+// Sem argumento, a vista se alinha ao editor. Com um número, a vista fica nessa rolagem
+// (é o usuário rolando o braille) e o editor é que vai atrás, em rolarTextoPelaVista.
+function desenharVista(rolagemVista) {
   const cursor = posicao();
   const tinta = $("tinta").checked;
   const formato = vistaAtual(tinta);
   const linhas = formato.linhas;
   const raiz = $("vista");
+  const area = $("texto");
+  const altura = alturaLinha();
+  ajustarLarguraEditor();
+  const topos = geometriaDoTexto();
+  const total = topos.length - 1;
+  const inicioDaLinha = mapaDeLinhas(formato, total);
   const nome = tinta ? "Tinta — texto da impressora" : "Braille";
   const situacao = resumo(preparar(linhasDoTexto())[cursor.linha]);
-  let indiceCursor = 0;
-  for (let indice = 0; indice < linhas.length; indice += 1) {
-    if (cobreCursor(linhas, indice, cursor.linha)) {
-      indiceCursor = indice;
-      break;
-    }
-  }
-  const pagina = (linhas[indiceCursor]?.pagina ?? 0) + 1;
+  const doCursor = faixasDoCursor(linhas, cursor.linha);
+  const pagina = (linhas[doCursor.primeira]?.pagina ?? 0) + 1;
   const partes = [nome];
   if (!situacao.includes("×")) partes.push(`${formato.colunas}×${formato.altura}`);
   partes.push(`página ${pagina} de ${formato.paginas}`);
   if (situacao) partes.push(situacao);
+  // O original mostrava estas mensagens em caixas a cada compilação; aqui ficam no título do painel.
+  const avisos = formato.avisos || [];
+  if (avisos.length) partes.push(`⚠ ${avisos.length} ${avisos.length === 1 ? "aviso" : "avisos"}`);
   $("painel-titulo").textContent = partes.join(" · ");
-  const alturaVisivel = raiz.clientHeight || 400;
-  const quantidade = Math.ceil(alturaVisivel / ALTURA_LINHA) + 8;
-  let inicio = Math.max(0, Math.floor(raiz.scrollTop / ALTURA_LINHA) - 3);
-  if (seguirCursor) {
-    const linhaTopo = Math.max(0, indiceCursor - 2);
-    if (indiceCursor < inicio || indiceCursor > inicio + quantidade - 6) inicio = linhaTopo;
-  }
+  $("painel-titulo").title = avisos.map((aviso) => aviso.texto).join("\n");
+
+  // Folga no fim de cada lado, para os finais também ficarem pareados.
+  const visiveisVista = (raiz.clientHeight || 400) / altura;
+  const maxVista = Math.max(0, linhas.length - visiveisVista);
+  const maxTextoY = Math.max(0, topos[total] + 24 - area.clientHeight);
+  const faltaTexto = Math.max(0, topoDaLinha(topos, linhaDaFaixa(inicioDaLinha, maxVista)) - maxTextoY);
+  const faltaVista = Math.max(0, faixaDaLinha(inicioDaLinha, linhaDoTopo(topos, maxTextoY)) - maxVista);
+  const folgaTexto = `${12 + Math.ceil(faltaTexto)}px`;
+  if (area.style.paddingBottom !== folgaTexto) area.style.paddingBottom = folgaTexto;
+
+  // Fim com fim: o editor no fundo leva a vista ao fundo.
+  const textoNoFim = area.scrollTop > 0 && area.scrollTop >= area.scrollHeight - area.clientHeight - 1;
+  const maxRolagem = Math.max(0, (linhas.length + faltaVista) * altura + 24 - (raiz.clientHeight || 400));
+  const alvo = Math.min(maxRolagem, rolagemVista ?? (textoNoFim ? maxRolagem : faixaDaLinha(inicioDaLinha, linhaDoTopo(topos, area.scrollTop)) * altura));
+  const quantidade = Math.ceil(visiveisVista) + 8;
+  const inicio = Math.max(0, Math.min(linhas.length, Math.floor(alvo / altura) - 3));
   const fim = Math.min(linhas.length, inicio + quantidade);
+  raiz.style.setProperty("--faixa", `${altura}px`);
   const antes = document.createElement("div");
-  antes.style.height = `${inicio * ALTURA_LINHA}px`;
+  antes.style.height = `${inicio * altura}px`;
   const miolo = document.createElement("div");
   for (let indice = inicio; indice < fim; indice += 1) {
     const faixa = desenharFaixa(linhas[indice], cursor);
-    if (cobreCursor(linhas, indice, cursor.linha)) faixa.classList.add("atual");
+    if (doCursor.cobre.has(indice)) faixa.classList.add("atual");
     miolo.append(faixa);
   }
   const depois = document.createElement("div");
-  depois.style.height = `${Math.max(0, linhas.length - fim) * ALTURA_LINHA}px`;
-  const rolagem = seguirCursor ? Math.max(0, (indiceCursor - 2) * ALTURA_LINHA) : raiz.scrollTop;
-  estado.interno = true;
+  depois.style.height = `${(Math.max(0, linhas.length - fim) + faltaVista) * altura}px`;
   raiz.replaceChildren(antes, miolo, depois);
-  raiz.scrollTop = rolagem;
-  estado.interno = false;
+  raiz.scrollTop = alvo;
+  estado.rolagemVista = raiz.scrollTop;
 }
 
-function desenhar(seguirCursor = true) {
+function rolarTextoPelaVista() {
+  const area = $("texto");
+  const altura = alturaLinha();
+  const topos = geometriaDoTexto();
+  const inicioDaLinha = mapaDeLinhas(vistaAtual($("tinta").checked), topos.length - 1);
+  const raiz = $("vista");
+  const vistaNoFim = raiz.scrollTop > 0 && raiz.scrollTop >= raiz.scrollHeight - raiz.clientHeight - 1;
+  area.scrollTop = vistaNoFim ? area.scrollHeight : topoDaLinha(topos, linhaDaFaixa(inicioDaLinha, raiz.scrollTop / altura));
+  estado.rolagemTexto = area.scrollTop;
+}
+
+function desenhar() {
   estado.formatoSujo = true;
   atualizarStatus();
-  desenharVista(seguirCursor);
+  desenharVista();
   desenharCinco();
 }
 
@@ -241,13 +401,7 @@ function desenharCinco() {
   caixa.hidden = false;
   const formato = vistaAtual($("tinta").checked);
   const cursor = posicao();
-  let indice = 0;
-  for (let i = 0; i < formato.linhas.length; i += 1) {
-    if (cobreCursor(formato.linhas, i, cursor.linha)) {
-      indice = i;
-      break;
-    }
-  }
+  const indice = faixasDoCursor(formato.linhas, cursor.linha).primeira;
   const fatia = formato.linhas.slice(Math.max(0, indice - 2), Math.max(0, indice - 2) + 5);
   caixa.replaceChildren();
   for (const item of fatia) {
@@ -276,7 +430,7 @@ function persistir() {
     comTitulo: $("com-titulo").checked,
     tiraBrancas: $("tira-brancas").checked,
     numeracao: $("numeracao").value,
-    colunasPadrao: Number($("colunas-padrao").value) || 32,
+    colunasPadrao: Number($("colunas-padrao").value) || 34,
     linhasPadrao: Number($("linhas-padrao").value) || 28,
     maxCol: Number($("max-col").value) || 70,
     quebraAuto: $("quebra-auto").checked,
@@ -315,7 +469,7 @@ async function lerArquivo(arquivo) {
 }
 
 function aplicarFonte(tamanho) {
-  const px = Math.min(48, Math.max(12, Number(tamanho) || 18));
+  const px = Math.min(48, Math.max(12, Number(tamanho) || 22));
   estado.fonte = px;
   $("texto").style.fontSize = `${px}px`;
 }
@@ -338,11 +492,12 @@ function restaurar() {
     if (dados.colunasPadrao) $("colunas-padrao").value = dados.colunasPadrao;
     if (dados.linhasPadrao) $("linhas-padrao").value = dados.linhasPadrao;
     if (dados.maxCol) $("max-col").value = dados.maxCol;
-    $("quebra-auto").checked = Boolean(dados.quebraAuto);
+    if (typeof dados.quebraAuto === "boolean") $("quebra-auto").checked = dados.quebraAuto;
     if (typeof dados.autoFormata === "boolean") $("auto-formata").checked = dados.autoFormata;
     if (typeof dados.silabas === "boolean") $("silabas-padrao").checked = dados.silabas;
-    $("interponto").checked = Boolean(dados.interponto);
-    if (dados.fonte) aplicarFonte(dados.fonte);
+    if (typeof dados.interponto === "boolean") $("interponto").checked = dados.interponto;
+    // 18 era o padrão antigo (fonte proporcional); vale o novo padrão maior.
+    if (dados.fonte && dados.fonte !== 18) aplicarFonte(dados.fonte);
     estado.atualizacaoAuto = Boolean(dados.atualizacaoAuto);
   } catch {
     estado.nome = "sem título";
@@ -363,7 +518,7 @@ function irPara(linha, coluna) {
   area.focus();
   area.setSelectionRange(pos, pos);
   atualizarStatus();
-  desenharVista(true);
+  desenharVista();
 }
 
 function salvar() {
@@ -504,7 +659,7 @@ function substituirTextoTodo(texto) {
 
 function colunasAtuais() {
   const info = preparar(linhasDoTexto()).find((item) => item.colunas);
-  return info?.colunas || opcoes().colunasPadrao || 32;
+  return info?.colunas || opcoes().colunasPadrao || 34;
 }
 
 function lembrarRecente() {
@@ -715,6 +870,7 @@ function acao(nome) {
     const tamanho = window.prompt("Tamanho da fonte na tela", String(estado.fonte));
     if (tamanho && Number(tamanho)) {
       aplicarFonte(tamanho);
+      desenharVista();
       persistir();
     }
   } else if (nome === "tinta") {
@@ -919,8 +1075,8 @@ restaurar();
 montarRecentes();
 preencherSimbolos();
 desenhar();
-window.requestAnimationFrame(() => desenharVista(false));
-window.addEventListener("resize", () => desenharVista(false));
+window.requestAnimationFrame(() => desenharVista());
+window.addEventListener("resize", () => desenharVista());
 $("texto").focus();
 
 let linhaVista = -1;
@@ -928,7 +1084,7 @@ function aposCursor(seguir) {
   const cursor = atualizarStatus();
   if (seguir || cursor.linha !== linhaVista) {
     linhaVista = cursor.linha;
-    desenharVista(true);
+    desenharVista();
   }
 }
 
@@ -995,10 +1151,25 @@ document.addEventListener("click", (evento) => {
   acao(botao.dataset.acao);
 });
 
+// Cada lado guarda a rolagem que o outro lhe deu; um evento com esse mesmo valor
+// é eco da sincronização e não volta a mexer no outro lado.
 $("vista").addEventListener("scroll", () => {
-  if (estado.interno) return;
+  const raiz = $("vista");
+  if (Math.abs(raiz.scrollTop - estado.rolagemVista) < 1) return;
+  estado.rolagemVista = raiz.scrollTop;
   window.cancelAnimationFrame(estado.quadro);
-  estado.quadro = window.requestAnimationFrame(() => desenharVista(false));
+  estado.quadro = window.requestAnimationFrame(() => {
+    desenharVista(raiz.scrollTop);
+    rolarTextoPelaVista();
+  });
+});
+
+$("texto").addEventListener("scroll", () => {
+  const area = $("texto");
+  if (Math.abs(area.scrollTop - estado.rolagemTexto) < 1) return;
+  estado.rolagemTexto = area.scrollTop;
+  window.cancelAnimationFrame(estado.quadroTexto);
+  estado.quadroTexto = window.requestAnimationFrame(() => desenharVista());
 });
 
 $("vista").addEventListener("click", (evento) => {
