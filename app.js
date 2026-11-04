@@ -1,7 +1,7 @@
 import { tabelas } from "./tabelas.js";
-import { classificar, preparar, resumo } from "./comandos.js?edicao=24";
-import { formatar } from "./pagina.js?edicao=24";
-import { caractereMeta, metaDePontos, nomesPontos, traduzir, unicodeDaCela } from "./motor.js?edicao=24";
+import { classificar, preparar, resumo } from "./comandos.js?edicao=26";
+import { formatar } from "./pagina.js?edicao=26";
+import { caractereMeta, metaDePontos, nomesPontos, traduzir, unicodeDaCela } from "./motor.js?edicao=26";
 import {
   apararFim,
   centrarFisico,
@@ -204,9 +204,12 @@ function topoDaLinha(topos, posicaoTexto) {
   return topos[linha] + fracao * (topos[linha + 1] - topos[linha]);
 }
 
-// A largura do editor é a das colunas braille (em caracteres da fonte monoespaçada).
+// A largura do editor é a das colunas braille mais os 10 espaços que marcam uma linha
+// centralizada, para ela não quebrar e voltar para a coluna 0.
+const FOLGA_CENTRALIZADO = 10;
+
 function ajustarLarguraEditor() {
-  const largura = `calc(${colunasAtuais()}ch + 28px)`;
+  const largura = `calc(${colunasAtuais() + FOLGA_CENTRALIZADO}ch + 28px)`;
   if ($("texto").style.width !== largura) $("texto").style.width = largura;
 }
 
@@ -509,16 +512,38 @@ function fecharMenus() {
   for (const botao of document.querySelectorAll(".menu-item > button")) botao.setAttribute("aria-expanded", "false");
 }
 
+// Clique numa linha da vista: o cursor vai para a linha de origem e a vista fica onde está.
+// focus() comum rolaria o editor até a posição antiga do cursor (o topo do livro, por exemplo),
+// e a vista iria junto; por isso o editor se alinha à vista.
 function irPara(linha, coluna) {
   const linhas = linhasDoTexto();
   let pos = 0;
   for (let indice = 0; indice < linha; indice += 1) pos += (linhas[indice]?.length || 0) + 1;
   pos += coluna;
   const area = $("texto");
-  area.focus();
+  area.focus({ preventScroll: true });
   area.setSelectionRange(pos, pos);
+  rolarTextoPelaVista();
   atualizarStatus();
-  desenharVista();
+  const topos = geometriaDoTexto();
+  const y = topos[Math.min(linha, topos.length - 1)] ?? 0;
+  if (y < area.scrollTop || y > area.scrollTop + area.clientHeight - alturaLinha()) {
+    // Se o pareamento deixou a linha fora do editor, o editor vai até ela e a vista acompanha.
+    area.scrollTop = Math.max(0, y - area.clientHeight / 3);
+    estado.rolagemTexto = area.scrollTop;
+    desenharVista();
+    return;
+  }
+  desenharVista($("vista").scrollTop);
+}
+
+// Ao abrir um texto, o cursor e a rolagem ficam no começo do livro.
+function irAoInicio() {
+  const area = $("texto");
+  area.setSelectionRange(0, 0);
+  area.scrollTop = 0;
+  estado.rolagemTexto = 0;
+  area.focus({ preventScroll: true });
 }
 
 function salvar() {
@@ -701,6 +726,7 @@ function montarRecentes() {
       $("texto").value = item.texto;
       estado.nome = item.nome;
       estado.sujo = false;
+      irAoInicio();
       desenhar(true);
       persistir();
     });
@@ -1074,10 +1100,10 @@ function preencherTabela() {
 restaurar();
 montarRecentes();
 preencherSimbolos();
+irAoInicio();
 desenhar();
 window.requestAnimationFrame(() => desenharVista());
 window.addEventListener("resize", () => desenharVista());
-$("texto").focus();
 
 let linhaVista = -1;
 function aposCursor(seguir) {
@@ -1164,6 +1190,16 @@ $("vista").addEventListener("scroll", () => {
   });
 });
 
+// O editor não ocupa a coluna inteira e está sem barra: a roda do mouse em qualquer ponto do
+// lado esquerdo rola o editor (e a vista vai junto pelo evento de rolagem dele).
+document.querySelector(".miolo").addEventListener("wheel", (evento) => {
+  if (evento.target.closest(".painel") || evento.ctrlKey) return;
+  evento.preventDefault();
+  const area = $("texto");
+  const fator = evento.deltaMode === 1 ? alturaLinha() : evento.deltaMode === 2 ? area.clientHeight : 1;
+  area.scrollTop += evento.deltaY * fator;
+}, { passive: false });
+
 $("texto").addEventListener("scroll", () => {
   const area = $("texto");
   if (Math.abs(area.scrollTop - estado.rolagemTexto) < 1) return;
@@ -1186,8 +1222,7 @@ $("arquivo").addEventListener("change", () => {
     $("texto").value = texto;
     estado.nome = arquivo.name;
     estado.sujo = false;
-    $("texto").focus();
-    $("texto").setSelectionRange(0, 0);
+    irAoInicio();
     desenhar(true);
     persistir();
     lembrarRecente();
