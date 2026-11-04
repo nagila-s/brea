@@ -1,6 +1,27 @@
 :root {
-  color: #111;
-  background: #d9d9d9;
+  /* Paleta: preto e cinzas, amarelo só para destaque. */
+  --fundo: #0d0d0d;          /* área de trabalho (editor e vista) */
+  --superficie: #1a1a1a;     /* menus, barras, títulos de painel */
+  --superficie-2: #262626;   /* segunda barra, submenus */
+  --borda: #3a3a3a;
+  --borda-forte: #555;
+  --texto: #ededed;
+  --texto-suave: #a6a6a6;
+  --destaque: #ffd400;       /* amarelo */
+  --destaque-texto: #0d0d0d; /* texto sobre o amarelo */
+  --destaque-fundo: rgba(255, 212, 0, 0.16); /* linha atual, hover */
+  --aviso: #ffb340;
+  /* Área de edição: papel cinza claro com texto escuro. */
+  --papel: #e3e3e3;
+  --papel-texto: #141414;
+  --papel-suave: #5c5c5c;
+  --papel-borda: #b8b8b8;
+  --papel-destaque: rgba(255, 212, 0, 0.45);
+  --papel-marca: #c9a400;   /* amarelo mais escuro, legível sobre o cinza */
+  --papel-aviso: #9a4d00;
+  color: var(--texto);
+  background: var(--fundo);
+  color-scheme: dark;
   font-family: "Segoe UI", sans-serif;
   font-size: 14px;
 }
@@ -20,14 +41,14 @@ body {
 
 button, select, input { font: inherit; color: inherit; }
 
-.janela { background: #f2f2f2; border-bottom: 1px solid #b5b5b5; }
+.janela { background: var(--superficie); border-bottom: 1px solid var(--borda); }
 
 .menu {
   display: flex;
   gap: 2px;
   padding: 2px 6px 0;
-  background: #fff;
-  border-bottom: 1px solid #d0d0d0;
+  background: var(--superficie);
+  border-bottom: 1px solid var(--borda);
 }
 
 .menu-item { position: relative; }
@@ -41,8 +62,8 @@ button, select, input { font: inherit; color: inherit; }
 }
 
 .menu-item > button:hover, .ferramentas button:hover, .submenu button:hover, .acoes-dialogo button:hover {
-  background: #e7f0f8;
-  border-color: #b7cbe0;
+  background: var(--destaque-fundo);
+  border-color: var(--destaque);
 }
 
 .submenu {
@@ -52,9 +73,9 @@ button, select, input { font: inherit; color: inherit; }
   left: 0;
   min-width: 220px;
   padding: 4px;
-  background: #fff;
-  border: 1px solid #b5b5b5;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+  background: var(--superficie-2);
+  border: 1px solid var(--borda-forte);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.6);
 }
 
 .menu > button {
@@ -69,20 +90,20 @@ button, select, input { font: inherit; color: inherit; }
 
 .submenu button { display: block; width: 100%; text-align: left; }
 
-.submenu hr { border: 0; border-top: 1px solid #e0e0e0; margin: 4px 0; }
+.submenu hr { border: 0; border-top: 1px solid var(--borda); margin: 4px 0; }
 
 .submenu .submenu { top: 0; left: 100%; }
 
 .cinco {
   padding: 4px 10px 8px;
-  background: #eef3ea;
-  border-top: 1px solid #d5d5d5;
+  background: var(--superficie);
+  border-top: 1px solid var(--borda);
   font-family: "Segoe UI Symbol", "Segoe UI", sans-serif;
   font-size: 20px;
   line-height: 1.35;
 }
 
-.editor.revisor { background: #f6f1dc; }
+.editor.revisor { background: #ece4c4; }
 
 .perkins-mostra {
   font-family: "Segoe UI Symbol", "Segoe UI", sans-serif;
@@ -96,7 +117,9 @@ button, select, input { font: inherit; color: inherit; }
 
 dialog { max-width: 520px; }
 
-dialog fieldset { margin: 8px 0; }
+dialog fieldset { margin: 8px 0; border: 1px solid var(--borda-forte); border-radius: 3px; }
+
+dialog legend { color: var(--destaque); padding: 0 4px; }
 
 dialog label { display: flex; gap: 8px; align-items: center; margin: 4px 0; }
 
@@ -110,6 +133,8 @@ dialog label { display: flex; gap: 8px; align-items: center; margin: 4px 0; }
   body[data-impressao="braille"] .status,
   body[data-impressao="braille"] #cinco { display: none !important; }
   body[data-impressao="braille"] .miolo { display: block; }
+  :root, .miolo, .painel, .editor { background: #fff !important; color: #000 !important; }
+  .linha-vista.atual, .grupo.cursor { background: transparent !important; box-shadow: none !important; }
 }
 
 .ferramentas {
@@ -118,15 +143,16 @@ dialog label { display: flex; gap: 8px; align-items: center; margin: 4px 0; }
   flex-wrap: wrap;
   gap: 6px;
   padding: 4px 8px;
-  background: #d6e4f0;
+  background: var(--superficie);
+  border-bottom: 1px solid var(--borda);
 }
 
-.ferramentas.segunda { background: #c5d6ea; }
+.ferramentas.segunda { background: var(--superficie-2); }
 
 .separa {
   width: 1px;
   align-self: stretch;
-  background: #a9bfd4;
+  background: var(--borda-forte);
   margin: 2px 4px;
 }
 
@@ -141,7 +167,9 @@ dialog label { display: flex; gap: 8px; align-items: center; margin: 4px 0; }
   padding: 12px 14px;
   border: 0;
   resize: none;
-  background: #fff;
+  background: var(--papel);
+  color: var(--papel-texto);
+  caret-color: var(--papel-texto);
   /* Monoespaçada e com a largura das colunas braille: o texto quebra perto de onde o braille quebra. */
   justify-self: start;
   margin-left: 16px;
@@ -161,10 +189,13 @@ dialog label { display: flex; gap: 8px; align-items: center; margin: 4px 0; }
 
 .editor:focus { outline: none; }
 
+.editor::selection { background: var(--destaque); color: var(--destaque-texto); }
+
 .miolo {
   flex: 1;
   min-height: 0;
-  background: #fff;
+  background: var(--papel);
+  color: var(--papel-texto);
   display: grid;
   grid-template-columns: 1fr 1fr;
 }
@@ -174,14 +205,16 @@ dialog label { display: flex; gap: 8px; align-items: center; margin: 4px 0; }
   flex-direction: column;
   min-width: 0;
   min-height: 0;
-  background: #fff;
-  border-left: 1px solid #c8c8c8;
+  background: var(--papel);
+  color: var(--papel-texto);
+  border-left: 1px solid var(--papel-borda);
 }
 
 .painel-titulo {
   padding: 6px 12px;
-  background: #f3f3f3;
-  border-bottom: 1px solid #ddd;
+  background: var(--superficie);
+  border-bottom: 1px solid var(--borda);
+  color: var(--texto-suave);
   font-size: 13px;
 }
 
@@ -202,7 +235,7 @@ dialog label { display: flex; gap: 8px; align-items: center; margin: 4px 0; }
   cursor: text;
 }
 
-.linha-vista.atual { background: #e7f4ff; }
+.linha-vista.atual { background: var(--papel-destaque); box-shadow: inset 3px 0 0 var(--papel-marca); }
 
 .linha-vista.braille {
   font-family: "Segoe UI Symbol", "Segoe UI", sans-serif;
@@ -215,18 +248,18 @@ dialog label { display: flex; gap: 8px; align-items: center; margin: 4px 0; }
 }
 
 .linha-vista.codigo {
-  color: #1f4b3a;
+  color: var(--papel-suave);
   font-family: Consolas, "Cascadia Mono", monospace;
   font-size: min(15px, calc(var(--faixa, 26px) * 0.65));
 }
 
-.linha-vista.nao { color: #8a4b08; }
+.linha-vista.nao { color: var(--papel-aviso); }
 
 .linha-vista.separador {
-  color: #334;
+  color: var(--papel-suave);
   font-size: 12px;
-  background: #f3f6f8;
-  border-top: 1px solid #c5d0d8;
+  background: #d2d2d2;
+  border-top: 1px solid var(--papel-borda);
 }
 
 .grupo {
@@ -237,7 +270,7 @@ dialog label { display: flex; gap: 8px; align-items: center; margin: 4px 0; }
   cursor: text;
 }
 
-.grupo.cursor { background: #fff3a0; }
+.grupo.cursor { background: var(--destaque); color: var(--destaque-texto); }
 
 .tinta-texto {
   font-family: Consolas, "Cascadia Mono", monospace;
@@ -271,27 +304,30 @@ dialog label { display: flex; gap: 8px; align-items: center; margin: 4px 0; }
   background: transparent;
 }
 
-.ponto.aceso { background: #111; }
+.ponto.aceso { background: currentColor; }
 
 .status {
   display: flex;
   gap: 0;
-  background: #f3f3f3;
-  border-top: 1px solid #c8c8c8;
+  background: var(--superficie);
+  border-top: 1px solid var(--borda);
+  color: var(--texto-suave);
   font-size: 13px;
 }
 
 .status span {
   padding: 4px 10px;
-  border-right: 1px solid #d0d0d0;
+  border-right: 1px solid var(--borda);
 }
 
 #st-car { flex: 1; }
 
-#st-doc { margin-left: auto; border-right: 0; border-left: 1px solid #d0d0d0; }
+#st-doc { margin-left: auto; border-right: 0; border-left: 1px solid var(--borda); }
 
 dialog {
-  border: 1px solid #b5b5b5;
+  background: var(--superficie-2);
+  color: var(--texto);
+  border: 1px solid var(--borda-forte);
   padding: 16px;
   width: min(420px, calc(100vw - 32px));
 }
@@ -304,4 +340,14 @@ dialog label, #busca-simbolo, #lista-simbolos { display: block; margin: 8px 0; }
 
 .acoes-dialogo { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
 
-.acoes-dialogo button { background: #1f4b3a; color: #fff; border-color: #1f4b3a; }
+.acoes-dialogo button { background: var(--destaque); color: var(--destaque-texto); border-color: var(--destaque); font-weight: 600; }
+
+.acoes-dialogo button:hover { background: #ffe14d; border-color: #ffe14d; }
+
+dialog::backdrop { background: rgba(0, 0, 0, 0.7); }
+
+input, select { background: var(--fundo); border: 1px solid var(--borda-forte); }
+
+input[type="checkbox"], input[type="radio"] { accent-color: var(--destaque); }
+
+:focus-visible { outline: 2px solid var(--destaque); outline-offset: 1px; }
