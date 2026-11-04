@@ -144,8 +144,8 @@ dialog label { display: flex; gap: 8px; align-items: center; margin: 4px 0; }
   background: #fff;
   /* Monoespaçada e com a largura das colunas braille: o texto quebra perto de onde o braille quebra. */
   justify-self: start;
-  margin-left: 56px;
-  max-width: calc(100% - 56px);
+  margin-left: 16px;
+  max-width: calc(100% - 16px);
   font-family: Consolas, "Cascadia Mono", monospace;
   font-size: 22px;
   line-height: 1.45;

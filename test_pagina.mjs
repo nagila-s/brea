@@ -213,4 +213,11 @@ if (paginasDe(["texto", "<P>"]).paginas !== 2) throw new Error("<P> no fim");
 if (paginasDe(["<T->", "a", "<P>", "<P>", "b"]).paginas !== 3) throw new Error("página vazia sem cabeçalho");
 if (paginasDe(["<T+3>", "a"]).paginas !== 1 || cabecas(["<T+3>", "a"]).join() !== "#c") throw new Error("<T+3> no início");
 
+// <T*n>/<T+n> sempre reiniciam a contagem em n (0049BEA5), mesmo que n seja o número de antes.
+const capa = Array.from({ length: 12 }, (_, i) => `capa ${i + 1}`);
+const corpoDe = (rotulo) => Array.from({ length: 12 }, (_, i) => `${rotulo} ${i + 1}`);
+const numeros = formatar(["<F->", ...capa, "<t*1>", ...corpoDe("pre"), "<t+1>", ...corpoDe("cap")], { ...opcoes, colunasPadrao: 34, linhasPadrao: 6 }, true)
+  .linhas.filter((linha) => linha.cabecalho).map((linha) => linha.texto.trim());
+if (numeros.join() !== "#a,#b,#c,I,II,III,#a,#b,#c") throw new Error(`reinício da numeração: ${numeros}`);
+
 console.log("ok", junto[0], silabas.join(" / "), paragrafo[0], faixa);

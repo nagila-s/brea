@@ -1,5 +1,5 @@
-import { caractereMeta, traduzir, unicodeDaCela } from "./motor.js?edicao=24";
-import { aplicar, classificar } from "./comandos.js?edicao=24";
+import { caractereMeta, traduzir, unicodeDaCela } from "./motor.js?edicao=26";
+import { aplicar, classificar } from "./comandos.js?edicao=26";
 
 function celasDe(texto, opcoes, cache) {
   const chave = opcoes.ingles ? `I${texto}` : `-${texto}`;
@@ -300,7 +300,13 @@ function montarSegmentos(linhas, opcoes, avisos = []) {
       aplicar(doc, comando);
       if (comando.tipo === "quebra" || (comando.tipo === "titulo" && comando.modo === "numero")) {
         // <P> sempre vira página (0049BCE1); <T+n> no começo do texto só acerta o número.
-        segmentos.push({ tipo: "quebra", forcada: comando.tipo === "quebra", origem: indice, ...foto(doc) });
+        segmentos.push({
+          tipo: "quebra",
+          forcada: comando.tipo === "quebra",
+          reinicia: comando.tipo === "titulo" ? doc.numeroInicial : null,
+          origem: indice,
+          ...foto(doc),
+        });
       } else if (comando.tipo === "grafico-arquivo") {
         segmentos.push({ tipo: "nota", texto: comando.rotulo, origem: indice, nao: false, ...foto(doc) });
       }
@@ -392,6 +398,7 @@ function formatar(linhas, opcoes, tinta) {
   const paginas = [];
   let atual = null;
   let proximoNumero = null;
+  let reinicioPendente = null;
 
   function fecha() {
     if (!atual) return;
@@ -419,8 +426,10 @@ function formatar(linhas, opcoes, tinta) {
       margem: seg.margem,
       interponto: seg.interponto,
       origem: seg.origem ?? seg.partes?.[0]?.origem ?? 0,
+      reinicio: reinicioPendente,
       corpo: [],
     };
+    reinicioPendente = null;
   }
 
   function limite() {
@@ -448,6 +457,21 @@ function formatar(linhas, opcoes, tinta) {
 
   for (const seg of segmentos) {
     if (seg.tipo === "quebra") {
+      if (seg.reinicia != null) {
+        // 0049BEA5: <T+n>/<T*n> sempre reinicia a contagem em n. Na primeira página ainda
+        // vazia só acerta o número; fora disso fecha a página e grava já o cabeçalho da nova.
+        const primeiraVazia = !paginas.length && (!atual || !atual.corpo.length);
+        if (primeiraVazia) {
+          if (atual) atual.reinicio = seg.reinicia;
+          else reinicioPendente = seg.reinicia;
+          continue;
+        }
+        fecha();
+        abre(seg);
+        atual.manter = true;
+        atual.reinicio = seg.reinicia;
+        continue;
+      }
       if (seg.forcada) {
         // 0049BCE1: grava o cabeçalho pendente, fecha a página e já grava o cabeçalho da
         // seguinte. Página sem nada continua existindo e numerada, inclusive a última.
@@ -487,13 +511,9 @@ function formatar(linhas, opcoes, tinta) {
   }
 
   const vista = [];
-  let numeroAplicado = null;
   proximoNumero = 1;
   paginas.forEach((pagina, indice) => {
-    if (pagina.numeroInicial != null && pagina.numeroInicial !== numeroAplicado) {
-      proximoNumero = pagina.numeroInicial;
-      numeroAplicado = pagina.numeroInicial;
-    }
+    if (pagina.reinicio != null) proximoNumero = pagina.reinicio;
     let numero = proximoNumero;
     proximoNumero += 1;
     if (indice > 0) {
