@@ -1,6 +1,8 @@
 import { tabelas } from "./tabelas.js";
 import { classificar, preparar, resumo } from "./comandos.js?edicao=26";
-import { formatar } from "./pagina.js?edicao=26";
+import { formatar } from "./pagina.js?edicao=27";
+import { montarFaixas } from "./faixas.js?edicao=27";
+import { desenharPareada, marcarAtual } from "./pareada.js?edicao=27";
 import { caractereMeta, metaDePontos, nomesPontos, traduzir, unicodeDaCela } from "./motor.js?edicao=26";
 import {
   apararFim,
@@ -320,6 +322,11 @@ function atualizarStatus() {
 // Sem argumento, a vista se alinha ao editor. Com um número, a vista fica nessa rolagem
 // (é o usuário rolando o braille) e o editor é que vai atrás, em rolarTextoPelaVista.
 function desenharVista(rolagemVista) {
+  sincronizarModo();
+  if (pareadoLigado()) {
+    desenharModoPareado(false);
+    return;
+  }
   const cursor = posicao();
   const tinta = $("tinta").checked;
   const formato = vistaAtual(tinta);
@@ -391,8 +398,43 @@ function rolarTextoPelaVista() {
 function desenhar() {
   estado.formatoSujo = true;
   atualizarStatus();
-  desenharVista();
+  if (pareadoLigado()) desenharModoPareado();
+  else desenharVista();
   desenharCinco();
+}
+
+// Etapa 2 do PLANO-EDITOR: vista pareada só de leitura, no lugar do editor e da vista braille.
+function pareadoLigado() {
+  return $("pareado").checked;
+}
+
+function desenharModoPareado(seguir = true) {
+  sincronizarModo();
+  const linhas = linhasDoTexto();
+  const op = opcoes();
+  const formato = formatar(linhas, op, false);
+  const raiz = $("pareada");
+  desenharPareada(raiz, montarFaixas(linhas, formato, op), formato.colunas);
+  $("painel-titulo").textContent = `Pareado · ${formato.colunas}×${formato.altura} · ${formato.paginas} páginas`;
+  marcarCursorPareado(seguir);
+}
+
+function marcarCursorPareado(seguir) {
+  const raiz = $("pareada");
+  const primeira = marcarAtual(raiz, posicao().linha);
+  if (seguir && primeira) raiz.scrollTop = Math.max(0, primeira.offsetTop - raiz.clientHeight / 3);
+}
+
+function sincronizarModo() {
+  const ligado = pareadoLigado();
+  document.body.classList.toggle("modo-pareado", ligado);
+  $("pareada").hidden = !ligado;
+}
+
+function aplicarModoPareado() {
+  sincronizarModo();
+  if (pareadoLigado()) desenharModoPareado();
+  else desenharVista();
 }
 
 function desenharCinco() {
@@ -430,6 +472,7 @@ function persistir() {
     maiusculaPalavra: $("maiuscula-palavra").checked,
     numero: $("numero").checked,
     tinta: $("tinta").checked,
+    pareado: $("pareado").checked,
     comTitulo: $("com-titulo").checked,
     tiraBrancas: $("tira-brancas").checked,
     numeracao: $("numeracao").value,
@@ -489,6 +532,7 @@ function restaurar() {
     $("maiuscula-palavra").checked = dados.maiusculaPalavra !== false;
     $("numero").checked = dados.numero !== false;
     $("tinta").checked = Boolean(dados.tinta);
+    $("pareado").checked = Boolean(dados.pareado);
     if (typeof dados.comTitulo === "boolean") $("com-titulo").checked = dados.comTitulo;
     if (typeof dados.tiraBrancas === "boolean") $("tira-brancas").checked = dados.tiraBrancas;
     if (dados.numeracao != null) $("numeracao").value = String(dados.numeracao);
@@ -1136,6 +1180,10 @@ $("texto").addEventListener("input", () => {
 for (const evento of ["keyup", "click", "select"]) {
   $("texto").addEventListener(evento, () => aposCursor(false));
 }
+$("pareado").addEventListener("change", () => {
+  aplicarModoPareado();
+  persistir();
+});
 $("tinta").addEventListener("change", () => {
   desenhar();
   persistir();
