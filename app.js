@@ -1,8 +1,9 @@
 import { tabelas } from "./tabelas.js";
 import { classificar, preparar, resumo } from "./comandos.js?edicao=26";
-import { formatar } from "./pagina.js?edicao=31";
-import { montarFaixas } from "./faixas.js?edicao=29";
-import { criarJanela } from "./pareada.js?edicao=33";
+import { formatar } from "./pagina.js?edicao=32";
+import { contarQuebras, finalizarTexto, mesmoBraille, removerQuebras } from "./finalizar.js?edicao=1";
+import { montarFaixas } from "./faixas.js?edicao=30";
+import { criarJanela } from "./pareada.js?edicao=35";
 import {
   apagarNaBorda,
   editavel,
@@ -677,7 +678,7 @@ async function editar(acao) {
   const area = $("texto");
   area.focus();
   if (acao === "desfazer") {
-    document.execCommand("undo");
+    if (!desfazerTroca()) document.execCommand("undo");
     return;
   }
   try {
@@ -836,6 +837,78 @@ function montarRecentes() {
   });
 }
 
+// Troca o texto inteiro como uma edição só, que o Ctrl+Z desfaz de uma vez (Finalizar,
+// Remover quebras). O cursor fica na mesma linha do texto, ou na mais próxima.
+// O execCommand("insertText") poria a troca no Ctrl+Z do navegador, mas num livro de 70 páginas
+// leva uns 10 segundos. A troca é direta e o desfazer é próprio: o Ctrl+Z seguinte (ou
+// Editar > Desfazer) devolve o texto de antes, enquanto ele não for mexido de novo.
+const troca = { antes: null, depois: null, linha: 0, coluna: 0 };
+
+function definirTexto(texto, linha, coluna) {
+  const area = $("texto");
+  area.value = texto;
+  const linhas = texto.split("\n");
+  const alvo = Math.min(linha, linhas.length - 1);
+  let indice = 0;
+  for (let i = 0; i < alvo; i += 1) indice += linhas[i].length + 1;
+  indice += Math.min(coluna, linhas[alvo].length);
+  area.focus({ preventScroll: true });
+  area.setSelectionRange(indice, indice);
+  pareado.ultimoIndice = indice;
+  estado.sujo = true;
+  desenhar();
+  persistir();
+}
+
+function trocarTextoComDesfazer(texto) {
+  const { linha, coluna } = posicao();
+  Object.assign(troca, { antes: $("texto").value, depois: texto, linha, coluna });
+  definirTexto(texto, linha, coluna);
+}
+
+function desfazerTroca() {
+  if (troca.depois == null || $("texto").value !== troca.depois) return false;
+  const { antes, linha, coluna } = troca;
+  troca.antes = null;
+  troca.depois = null;
+  definirTexto(antes, linha, coluna);
+  return true;
+}
+
+// Finalizar: grava um <P> em cada quebra de página automática, sem mudar o braille.
+function finalizar() {
+  const linhas = linhasDoTexto();
+  const op = opcoes();
+  const resultado = finalizarTexto(linhas, op);
+  const mantidas = resultado.mantidas.length;
+  const sobre = mantidas
+    ? ` ${mantidas === 1 ? "Uma quebra ficou automática" : `${mantidas} quebras ficaram automáticas`}, porque partir a linha ali mudaria o braille: ${resultado.mantidas.map((trecho) => `“${trecho}”`).join(", ")}.`
+    : "";
+  if (!resultado.quebras) {
+    avisar("Finalizar", mantidas ? `Nenhuma quebra foi gravada.${sobre}` : "Não há quebras de página automáticas para gravar.");
+    return;
+  }
+  const conferencia = mesmoBraille(linhas, resultado.linhas, op);
+  if (!conferencia.igual) {
+    avisar("Finalizar", `Nada foi alterado: gravar as quebras mudaria o braille (${conferencia.motivo}).`);
+    return;
+  }
+  trocarTextoComDesfazer(resultado.linhas.join("\n"));
+  const gravadas = resultado.quebras === 1 ? "Uma quebra de página foi gravada" : `${resultado.quebras} quebras de página foram gravadas`;
+  avisar("Finalizar", `${gravadas} no texto (<P>). O braille continua o mesmo.${sobre} Ctrl+Z desfaz.`);
+}
+
+function pedirRemoverQuebras() {
+  const total = contarQuebras(linhasDoTexto());
+  if (!total) {
+    avisar("Remover quebras de página", "Não há quebras de página para remover.");
+    return;
+  }
+  const quantas = total === 1 ? "Será apagada 1 quebra de página (<P>)" : `Serão apagadas ${total} quebras de página (<P>)`;
+  $("remover-quebras-texto").textContent = `${quantas}, inclusive as que você inseriu à mão, por exemplo para começar um capítulo numa página nova. As páginas voltarão a ser quebradas automaticamente. Você pode desfazer com Ctrl+Z.`;
+  $("remover-quebras-dialogo").showModal();
+}
+
 function avisar(titulo, texto) {
   $("aviso-titulo").textContent = titulo;
   $("aviso-texto").textContent = texto;
@@ -974,6 +1047,8 @@ function acao(nome) {
   if (nome === "novo") novo();
   else if (nome === "abrir") $("arquivo").click();
   else if (nome === "salvar") salvar();
+  else if (nome === "finalizar") finalizar();
+  else if (nome === "remover-quebras") pedirRemoverQuebras();
   else if (nome === "salvar-como") {
     const nomeArquivo = window.prompt("Salvar como", estado.nome);
     if (!nomeArquivo || !nomeArquivo.trim()) return;
@@ -1251,6 +1326,10 @@ $("texto").addEventListener("input", () => {
 for (const evento of ["keyup", "click", "select"]) {
   $("texto").addEventListener(evento, () => atualizarStatus());
 }
+$("texto").addEventListener("keydown", (evento) => {
+  const desfazer = (evento.ctrlKey || evento.metaKey) && !evento.shiftKey && evento.key.toLowerCase() === "z";
+  if (desfazer && desfazerTroca()) evento.preventDefault();
+});
 $("texto").addEventListener("keydown", teclaPareada);
 for (const evento of ["click", "keyup", "change", "input"]) document.addEventListener(evento, sincronizarPareado);
 document.addEventListener("close", sincronizarPareado, true);
@@ -1420,6 +1499,11 @@ $("config-fechar").addEventListener("click", () => {
 });
 $("cinco-linhas").addEventListener("change", desenharCinco);
 $("aviso-fechar").addEventListener("click", () => $("aviso").close());
+$("remover-quebras-cancela").addEventListener("click", () => $("remover-quebras-dialogo").close());
+$("remover-quebras-ok").addEventListener("click", () => {
+  $("remover-quebras-dialogo").close();
+  trocarTextoComDesfazer(removerQuebras(linhasDoTexto()).linhas.join("\n"));
+});
 $("localizar-fechar").addEventListener("click", () => $("localizar").close());
 $("substituir-fechar").addEventListener("click", () => $("substituir-dialogo").close());
 $("centrar-cancela").addEventListener("click", () => $("centrar-dialogo").close());

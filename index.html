@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Braille Fácil</title>
-  <link rel="stylesheet" href="estilo.css?edicao=40">
+  <link rel="stylesheet" href="estilo.css?edicao=41">
 </head>
 <body>
   <header class="janela">
@@ -20,6 +20,9 @@
           </div>
           <button type="button" data-acao="salvar">Salvar</button>
           <button type="button" data-acao="salvar-como">Salvar Como</button>
+          <hr>
+          <button type="button" data-acao="finalizar">Finalizar (gravar quebras de página)</button>
+          <button type="button" data-acao="remover-quebras">Remover quebras de página</button>
           <hr>
           <button type="button" data-acao="imprimir-texto">Imprimir Texto</button>
           <button type="button" data-acao="imprimir-braille">Imprimir em Braille</button>
@@ -167,6 +170,7 @@
       <button type="button" data-acao="abrir" title="Abrir">Abrir</button>
       <button type="button" data-acao="salvar" title="Salvar">Salvar</button>
       <button type="button" data-acao="imprimir-braille" title="Imprimir">Imprimir</button>
+      <button type="button" data-acao="finalizar" title="Gravar no texto um &lt;P&gt; em cada quebra de página automática">Finalizar</button>
       <span class="separa"></span>
       <button type="button" data-acao="recortar" title="Cortar seleção">Recortar</button>
       <button type="button" data-acao="copiar" title="Copiar seleção">Copiar</button>
@@ -343,6 +347,15 @@
     </div>
   </dialog>
 
+  <dialog id="remover-quebras-dialogo">
+    <h2>Remover quebras de página</h2>
+    <p id="remover-quebras-texto"></p>
+    <div class="acoes-dialogo">
+      <button type="button" id="remover-quebras-ok">Remover</button>
+      <button type="button" id="remover-quebras-cancela">Cancelar</button>
+    </div>
+  </dialog>
+
   <dialog id="aviso">
     <h2 id="aviso-titulo"></h2>
     <p id="aviso-texto"></p>
@@ -351,6 +364,6 @@
     </div>
   </dialog>
 
-  <script type="module" src="app.js?edicao=48"></script>
+  <script type="module" src="app.js?edicao=50"></script>
 </body>
 </html>

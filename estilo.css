@@ -360,6 +360,9 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--destaque); }
 
 .faixa-nota { color: var(--papel-aviso); }
 
+/* Possível parágrafo partido pelo Finalizar dentro do recuo (faixas.js, corteNoRecuo). */
+.faixa.corte-recuo .lado-tinta { box-shadow: inset 3px 0 0 var(--papel-aviso); }
+
 .faixa-quebra {
   display: flex;
   align-items: center;

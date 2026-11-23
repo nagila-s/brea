@@ -119,6 +119,16 @@ function tintaDoItem(item, linhas, usados) {
   return item.tintaPronta;
 }
 
+// Linha do recuo que começa com dois espaços e letra minúscula: provavelmente o Finalizar
+// partiu ali um parágrafo e o <P> já foi removido. Os dois espaços fecham o parágrafo de cima,
+// então editar acima deixa uma quebra de linha fixa nesse ponto. O editor só avisa.
+function corteNoRecuo(faixa, linhas) {
+  if (!faixa.marcas.includes("R+")) return false;
+  const primeiro = faixa.trechos[0];
+  if (!primeiro || primeiro.de !== 0) return false;
+  return /^ {2}[a-zà-ÿ]/.test(linhas[primeiro.linha]);
+}
+
 function primeiraLinha(faixa) {
   if (faixa.trechos?.length) return faixa.trechos[0].linha;
   return faixa.linha ?? null;
@@ -167,7 +177,7 @@ function montarFaixas(linhas, formato, opcoes = {}) {
       }
       const { texto, trechos } = tintaDoItem(item, linhas, usados);
       const linha = trechos[0]?.linha ?? item.origem;
-      faixas.push({
+      const faixa = {
         tipo: "texto",
         braille: item.celas,
         tinta: texto,
@@ -175,7 +185,9 @@ function montarFaixas(linhas, formato, opcoes = {}) {
         linha,
         marcas: marcas[linha] || [],
         pagina: indice,
-      });
+      };
+      if (corteNoRecuo(faixa, linhas)) faixa.corteRecuo = true;
+      faixas.push(faixa);
     }
   });
 

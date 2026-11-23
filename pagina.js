@@ -261,7 +261,9 @@ function separaNoCorte(celas, util) {
 
 // Cada linha leva a página em tinta do momento em que o original a gravaria: a cortada, a da
 // linha do texto que fez o buffer passar da largura; a sobra, a do fechamento do parágrafo.
-function encaixar(partes, util, recuo, opcoes, cache, tintaFinal) {
+// `inteiras`: números das linhas do parágrafo que não podem terminar com palavra separada
+// (a última linha de uma página; ver formatar).
+function encaixar(partes, util, recuo, opcoes, cache, tintaFinal, inteiras = []) {
   const linhas = [];
   let pendente = celasDasPartes(partes, opcoes, cache);
   while (pendente.length && byteTexto(pendente[pendente.length - 1]) === 0x20) pendente.pop();
@@ -275,7 +277,8 @@ function encaixar(partes, util, recuo, opcoes, cache, tintaFinal) {
       linhas.push({ celas: atual, origem: origemDe(atual, reserva), tinta: tintaFinal });
       break;
     }
-    const corte = partirImpresso(atual, util, separaNoCorte(atual, util));
+    const separar = !inteiras.includes(linhas.length) && separaNoCorte(atual, util);
+    const corte = partirImpresso(atual, util, separar);
     const tintaDoCorte = (atual[util] ?? atual[atual.length - 1])?.tinta ?? tintaFinal;
     const cabeca = corte.cabeca.slice();
     if (corte.hifen && hifen) cabeca.push({ ...hifen, cortada: true });
@@ -292,6 +295,10 @@ function encaixar(partes, util, recuo, opcoes, cache, tintaFinal) {
     if (!pendente.length) break;
   }
   return linhas;
+}
+
+function terminaSeparada(item) {
+  return Boolean(item.celas[item.celas.length - 1]?.cortada);
 }
 
 function centrar(celas, util) {
@@ -448,9 +455,9 @@ function esquecerParagrafos() {
 }
 let passagem = 0;
 
-function chaveDoParagrafo(seg, partes, util, linhas) {
+function chaveDoParagrafo(seg, partes, util, linhas, inteiras) {
   const base = partes[0].origem;
-  let chave = `${seg.tipo}|${util}|${seg.tipo === "fluxo" && seg.recuo ? 1 : 0}|${seg.centro ? 1 : 0}|${seg.colunas}|${seg.margem}|${seg.paginaTinta}`;
+  let chave = `${seg.tipo}|${util}|${inteiras.join(",")}|${seg.tipo === "fluxo" && seg.recuo ? 1 : 0}|${seg.centro ? 1 : 0}|${seg.colunas}|${seg.margem}|${seg.paginaTinta}`;
   for (const parte of partes) {
     const original = linhas[parte.origem];
     chave += `\u0001${parte.origem - base}\u0002${parte.ingles ? 1 : 0}${parte.silabas === false ? 0 : 1}\u0002${parte.tinta}\u0002${original}`;
@@ -492,13 +499,13 @@ function copiarParagrafo(versao) {
   return { base: versao.base, itens, passagem: 0 };
 }
 
-function linhasDoParagrafo(seg, partes, util, margem, opcoes, cache, linhas) {
+function linhasDoParagrafo(seg, partes, util, margem, opcoes, cache, linhas, inteiras = []) {
   let memoria = PARAGRAFOS.get(cache);
   if (!memoria || memoria.total > 40000) {
     memoria = { mapa: new Map(), total: 0 };
     PARAGRAFOS.set(cache, memoria);
   }
-  const chave = chaveDoParagrafo(seg, partes, util, linhas);
+  const chave = chaveDoParagrafo(seg, partes, util, linhas, inteiras);
   const base = partes[0].origem;
   // Por chave, uma versão para cada posição (dois parágrafos iguais não brigam pela mesma).
   let versoes = memoria.mapa.get(chave);
@@ -520,7 +527,7 @@ function linhasDoParagrafo(seg, partes, util, margem, opcoes, cache, linhas) {
   }
   versoes = new Map();
   memoria.mapa.set(chave, versoes);
-  const produzidas = encaixar(partes, util, seg.tipo === "fluxo" && seg.recuo, opcoes, cache, seg.paginaTinta);
+  const produzidas = encaixar(partes, util, seg.tipo === "fluxo" && seg.recuo, opcoes, cache, seg.paginaTinta, inteiras);
   const itens = produzidas.map((linha) => {
     const miolo = seg.centro ? centrar(linha.celas, util) : linha.celas;
     return { tipo: "celas", celas: [...margem, ...miolo].slice(0, seg.colunas), origem: linha.origem, tinta: linha.tinta, conta: true };
@@ -580,6 +587,14 @@ function formatar(linhas, opcoes, tinta, { semVista = false } = {}) {
     // 0049B36B: sem título (<T->) não há linha de cabeçalho, nem para a página em tinta.
     const faixa = atual.titula;
     return Math.max(1, faixa ? atual.linhasPagina - 1 : atual.linhasPagina);
+  }
+
+  // A próxima linha emitida cairá na última posição da página? (mesma conta de emite)
+  function ultimaDaPagina(seg) {
+    const novaPagina = !atual || seg.colunas !== atual.colunas || seg.linhasPagina !== atual.linhasPagina || atual.corpo.length >= limite();
+    const teto = novaPagina ? Math.max(1, seg.titula ? seg.linhasPagina - 1 : seg.linhasPagina) : limite();
+    const posicao = novaPagina ? 0 : atual.corpo.length;
+    return posicao === teto - 1;
   }
 
   function emite(item, seg) {
@@ -643,7 +658,18 @@ function formatar(linhas, opcoes, tinta, { semVista = false } = {}) {
     const partes = seg.tipo === "fluxo"
       ? seg.partes
       : [{ texto: seg.texto, fazMapa: seg.fazMapa, origem: seg.origem, ingles: seg.ingles, silabas: seg.silabas, tinta: seg.paginaTinta }];
-    for (const item of linhasDoParagrafo(seg, partes, util, margem, opcoes, cache, linhas)) emite(item, seg);
+    // Regra nova (não existia no original): a última linha de uma página não termina com
+    // palavra separada. Se isso aconteceria, o parágrafo é recortado dali em diante sem
+    // separar sílabas naquela linha, e a palavra inteira vai para a página seguinte.
+    let inteiras = [];
+    let itens = linhasDoParagrafo(seg, partes, util, margem, opcoes, cache, linhas, inteiras);
+    for (let indice = 0; indice < itens.length; indice += 1) {
+      if (indice < itens.length - 1 && terminaSeparada(itens[indice]) && ultimaDaPagina(seg)) {
+        inteiras = [...inteiras, indice];
+        itens = linhasDoParagrafo(seg, partes, util, margem, opcoes, cache, linhas, inteiras);
+      }
+      emite(itens[indice], seg);
+    }
   }
   fecha();
   if (!paginas.length) {

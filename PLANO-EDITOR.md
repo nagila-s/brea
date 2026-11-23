@@ -109,6 +109,17 @@ Até a etapa 6, o editor antigo continuou sendo o padrão e o novo entrava pela 
   - Os dois espaços acrescentados dentro do recuo podem ficar. No recuo, toda linha depois da primeira já começa com dois espaços, então eles não abrem parágrafo.
 - **Ao salvar:** não finaliza sozinho. O botão deixa a pessoa escolher quando o livro está pronto.
 
+#### Como ficou (etapa 8)
+
+- **Exceção à palavra inteira:** quando a palavra não cabe na linha seguinte sem deixar a de cima com menos de 10 celas (o pontilhado de um sumário, por exemplo), o corte forçado do original continua valendo, em qualquer linha.
+- **Quebra que fica automática:** o tradutor trabalha linha a linha do texto, então partir uma linha pode mudar o braille na junção (um ")" sem o "(" na mesma linha). Nesse caso, e quando o pedaço de cima teria só espaços, o Finalizar não grava aquela quebra e o aviso mostra o trecho.
+- **Página em tinta:** a página automática leva a página em tinta da linha que a abriu, que pode vir de um `<nnn>` logo abaixo. Quando o valor difere do que vale no ponto do `<P>`, o Finalizar grava o `<nnn>` certo antes dele (`<0>` para tirar).
+- **Continuação no recuo:** os dois espaços entram quando a primeira linha da página nova começa com os espaços que o recuo acrescenta, conferido no próprio braille.
+- **Remover quebras:** pede confirmação com a contagem e avisa que leva também os `<P>` inseridos à mão.
+- **Desfazer:** Finalizar e Remover trocam o texto inteiro de uma vez; o Ctrl+Z seguinte (ou Editar > Desfazer) devolve o texto de antes. O desfazer do navegador levaria uns 10 segundos num livro de 70 páginas.
+- **Marca no recuo:** uma linha dentro de `<R+>` que começa com dois espaços e minúscula ganha uma barra laranja à esquerda, com dica: pode ser um parágrafo partido pelo Finalizar, e editar acima não a junta de volta.
+- **Verificação:** `test_finalizar.mjs` finaliza o livro (como veio e sem nenhum `<P>`, em três medidas) e confere que o braille não muda, que não sobra quebra automática além das mantidas, que finalizar de novo não muda nada e que remover devolve o braille original.
+
 ### Cabeçalho e número da página
 
 - Aparecem na tinta como texto normal, na linha do cabeçalho de cada página, alinhados como no braille.

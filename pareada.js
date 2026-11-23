@@ -50,7 +50,8 @@ function linhaDaFaixa(faixa) {
   }
 
   if (faixa.tipo === "quebra") {
-    linha.classList.add(faixa.forcada ? "forcada" : "automatica");
+    // Tracejada só a quebra automática; <P> e nova numeração (<T+n>) vêm de códigos do texto.
+    linha.classList.add(faixa.motivo === "automatica" ? "automatica" : "forcada");
     const rotulo = document.createElement("span");
     rotulo.className = "rotulo-quebra";
     rotulo.textContent = rotuloQuebra(faixa);
@@ -85,6 +86,11 @@ function linhaDaFaixa(faixa) {
 
   if (faixa.tipo === "cabecalho") linha.title = "cabeçalho da página (não editável)";
   if (faixa.tipo === "comentario") linha.title = "comentário: não vai para o braille";
+  if (faixa.corteRecuo) {
+    linha.classList.add("corte-recuo");
+    const aviso = "Começa com dois espaços dentro do recuo e com minúscula: pode ser um parágrafo partido pelo Finalizar. Editar o texto de cima não junta esta linha a ele.";
+    linha.title = linha.title ? `${linha.title}\n${aviso}` : aviso;
+  }
   linha.append(barras, tinta, braille);
   return linha;
 }
@@ -103,7 +109,7 @@ function assinaturaDoBraille(celas) {
 
 function assinatura(faixa) {
   const braille = faixa.braille ? assinaturaDoBraille(faixa.braille) : "";
-  return `${faixa.tipo}|${faixa.forcada ? 1 : 0}|${faixa.motivo ?? ""}|${(faixa.marcas || []).join(",")}|${faixa.tinta ?? ""}|${braille}`;
+  return `${faixa.tipo}|${faixa.corteRecuo ? 1 : 0}|${faixa.forcada ? 1 : 0}|${faixa.motivo ?? ""}|${(faixa.marcas || []).join(",")}|${faixa.tinta ?? ""}|${braille}`;
 }
 
 // Janela virtual: o livro pode ter milhares de faixas, mas só as que estão perto da tela
