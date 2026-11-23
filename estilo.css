@@ -469,12 +469,16 @@ body.modo-pareado .painel { grid-column: 1 / -1; border-left: 0; }
   pointer-events: none;
 }
 .cursor-pareado.piscando { animation: piscar 1.06s steps(1) infinite; }
+.cursor-pareado.piscando-b { animation: piscar-b 1.06s steps(1) infinite; }
 @keyframes piscar { 50% { opacity: 0; } }
+@keyframes piscar-b { 50% { opacity: 0; } }
 .faixa.atual .lado-tinta, .faixa.atual .lado-braille { box-shadow: none; background-image: linear-gradient(var(--papel-destaque), var(--papel-destaque)); }
 
-/* Livro grande: o navegador só calcula o layout das faixas perto da tela. */
-.pareada > .faixa { content-visibility: auto; contain-intrinsic-size: auto var(--altura-faixa); }
-.pareada > .faixa-quebra { contain-intrinsic-size: auto 22px; }
+/* Livro grande: só as faixas perto da tela existem (pareada.js). O trilho tem a altura do livro
+   inteiro e a janela desce até a primeira faixa desenhada. */
+.pareada { position: relative; overflow-anchor: none; }
+.trilho-pareado { position: relative; }
+.janela-pareada { position: absolute; top: 0; left: 0; right: 0; }
 
 /* Seleção no modo pareado: amarelo atrás da tinta e das celas correspondentes. */
 /* isolation: a seleção (z-index -1) fica acima do fundo do lado e abaixo das letras. */

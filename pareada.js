@@ -90,65 +90,175 @@ function linhaDaFaixa(faixa) {
 }
 
 // Assinatura do que a faixa mostra: duas faixas com a mesma assinatura usam o mesmo elemento.
+// A parte do braille fica guardada junto da lista de celas, que a paginação reaproveita.
+const ASSINATURAS = new WeakMap();
+function assinaturaDoBraille(celas) {
+  let guardada = ASSINATURAS.get(celas);
+  if (guardada == null) {
+    guardada = celas.map((cela) => (cela.tipo === "espaco" ? "0" : cela.dots)).join(",");
+    ASSINATURAS.set(celas, guardada);
+  }
+  return guardada;
+}
+
 function assinatura(faixa) {
-  if (faixa.tipo === "comando" || faixa.tipo === "oculta") return null;
-  const braille = faixa.braille ? faixa.braille.map((cela) => (cela.tipo === "espaco" ? "0" : cela.dots)).join(",") : "";
+  const braille = faixa.braille ? assinaturaDoBraille(faixa.braille) : "";
   return `${faixa.tipo}|${faixa.forcada ? 1 : 0}|${faixa.motivo ?? ""}|${(faixa.marcas || []).join(",")}|${faixa.tinta ?? ""}|${braille}`;
 }
 
-// Devolve, para cada faixa, o elemento desenhado (null para as linhas de código ocultas).
-// Com o desenho anterior, só troca as faixas do meio que mudaram (o começo e o fim iguais
-// ficam onde estão), para digitar num livro grande não recriar a página inteira.
-function desenharPareada(raiz, faixas, colunas, anterior = null) {
-  raiz.style.setProperty("--colunas", String(colunas));
-  const novas = faixas.map(assinatura);
-  const criar = (indice) => {
-    if (novas[indice] == null) return null;
-    const elemento = linhaDaFaixa(faixas[indice]);
-    elemento.dataset.i = String(indice);
-    return elemento;
+// Janela virtual: o livro pode ter milhares de faixas, mas só as que estão perto da tela
+// existem no DOM. A altura de cada faixa é conhecida (texto ou quebra), então a posição de
+// qualquer faixa sai de uma soma, sem pedir layout ao navegador.
+const SOBRA = 30;
+
+function criarJanela(raiz, { aoDesenhar } = {}) {
+  const trilho = document.createElement("div");
+  trilho.className = "trilho-pareado";
+  const lista = document.createElement("div");
+  lista.className = "janela-pareada";
+  trilho.append(lista);
+  raiz.replaceChildren(trilho);
+
+  const janela = {
+    faixas: [],
+    colunas: 34,
+    topos: new Float64Array(1),
+    alturas: { faixa: 30, quebra: 22 },
+    inicio: 12,
+    visivel: raiz.clientHeight,
+    de: 0,
+    ate: 0,
+    elementos: new Map(),
+    sujo: true,
   };
 
-  if (!anterior || anterior.colunas !== colunas || !anterior.assinaturas) {
-    const fragmento = document.createDocumentFragment();
-    const elementos = faixas.map((_, indice) => {
-      const elemento = criar(indice);
-      if (elemento) fragmento.append(elemento);
-      return elemento;
-    });
-    raiz.replaceChildren(fragmento);
-    return { elementos, assinaturas: novas, colunas };
+  function altura(faixa) {
+    if (!faixa || faixa.tipo === "comando" || faixa.tipo === "oculta") return 0;
+    return faixa.tipo === "quebra" ? janela.alturas.quebra : janela.alturas.faixa;
   }
 
-  const velhas = anterior.assinaturas;
-  let inicio = 0;
-  while (inicio < novas.length && inicio < velhas.length && novas[inicio] === velhas[inicio]) inicio += 1;
-  let fimNovo = novas.length - 1;
-  let fimVelho = velhas.length - 1;
-  while (fimNovo >= inicio && fimVelho >= inicio && novas[fimNovo] === velhas[fimVelho]) {
-    fimNovo -= 1;
-    fimVelho -= 1;
+  // Lidas do CSS só quando a fonte muda; digitar não pede nenhuma medida ao navegador.
+  function medirAlturas() {
+    const estilo = getComputedStyle(raiz);
+    const fonte = parseFloat(estilo.getPropertyValue("--fonte")) || 22;
+    janela.alturas = { faixa: fonte * 1.36, quebra: 22 };
+    janela.inicio = parseFloat(estilo.paddingTop) || 0;
   }
-  // Âncora: o primeiro elemento que fica, depois do trecho trocado.
-  let ancora = null;
-  for (let i = fimVelho + 1; i < velhas.length && !ancora; i += 1) ancora = anterior.elementos[i];
-  for (let i = inicio; i <= fimVelho; i += 1) anterior.elementos[i]?.remove();
-  const fragmento = document.createDocumentFragment();
-  const meio = [];
-  for (let i = inicio; i <= fimNovo; i += 1) {
-    const elemento = criar(i);
-    if (elemento) fragmento.append(elemento);
-    meio.push(elemento);
+
+  new ResizeObserver(() => {
+    janela.visivel = raiz.clientHeight;
+    desenhar();
+  }).observe(raiz);
+
+  function calcularTopos() {
+    const topos = new Float64Array(janela.faixas.length + 1);
+    for (let i = 0; i < janela.faixas.length; i += 1) topos[i + 1] = topos[i] + altura(janela.faixas[i]);
+    janela.topos = topos;
+    trilho.style.height = `${topos[janela.faixas.length]}px`;
   }
-  raiz.insertBefore(fragmento, ancora);
-  const elementos = [
-    ...anterior.elementos.slice(0, inicio),
-    ...meio,
-    ...anterior.elementos.slice(fimVelho + 1),
-  ];
-  // Os índices das faixas depois do trecho mudaram de número.
-  for (let i = fimNovo + 1; i < elementos.length; i += 1) if (elementos[i]) elementos[i].dataset.i = String(i);
-  return { elementos, assinaturas: novas, colunas };
+
+  // Primeira faixa cujo fim passa de y.
+  function faixaEm(y) {
+    let baixo = 0;
+    let alto = janela.faixas.length - 1;
+    while (baixo < alto) {
+      const meio = (baixo + alto) >> 1;
+      if (janela.topos[meio + 1] <= y) baixo = meio + 1;
+      else alto = meio;
+    }
+    return Math.max(0, baixo);
+  }
+
+  // Atributos que mudam quando a faixa só troca de lugar (Enter acima dela).
+  function acertarDados(elemento, faixa, indice) {
+    const dados = elemento.dataset;
+    const i = String(indice);
+    if (dados.i !== i) dados.i = i;
+    const linha = faixa.linha != null ? String(faixa.linha) : undefined;
+    if (dados.linha !== linha) {
+      if (linha == null) delete dados.linha;
+      else dados.linha = linha;
+    }
+    if (faixa.trechos?.length) {
+      const de = String(faixa.trechos[0].linha);
+      const ate = String(faixa.trechos[faixa.trechos.length - 1].linha);
+      if (dados.de !== de) dados.de = de;
+      if (dados.ate !== ate) dados.ate = ate;
+    }
+  }
+
+  // Desenha as faixas visíveis mais uma sobra; só refaz quando a tela sai do que já existe.
+  // Faixas que não mudaram (mesma assinatura) continuam sendo o mesmo elemento no mesmo lugar.
+  function desenhar(forcar = false) {
+    const n = janela.faixas.length;
+    const topo = raiz.scrollTop - janela.inicio;
+    const visivelDe = faixaEm(Math.max(0, topo));
+    const visivelAte = Math.min(n, faixaEm(topo + janela.visivel) + 1);
+    if (!forcar && !janela.sujo && visivelDe >= janela.de && visivelAte <= janela.ate) return false;
+    const de = Math.max(0, visivelDe - SOBRA);
+    const ate = Math.min(n, visivelAte + SOBRA);
+
+    const sobras = new Map();
+    for (const elemento of janela.elementos.values()) {
+      const chave = elemento.assinatura;
+      if (!sobras.has(chave)) sobras.set(chave, []);
+      sobras.get(chave).push(elemento);
+    }
+    const elementos = new Map();
+    const ordem = [];
+    for (let i = de; i < ate; i += 1) {
+      const faixa = janela.faixas[i];
+      if (!altura(faixa)) continue;
+      const chave = assinatura(faixa);
+      let elemento = sobras.get(chave)?.shift();
+      if (!elemento) {
+        elemento = linhaDaFaixa(faixa);
+        elemento.assinatura = chave;
+      }
+      acertarDados(elemento, faixa, i);
+      elementos.set(i, elemento);
+      ordem.push(elemento);
+    }
+    for (const restantes of sobras.values()) for (const elemento of restantes) elemento.remove();
+    let atual = lista.firstChild;
+    for (const elemento of ordem) {
+      if (atual === elemento) atual = atual.nextSibling;
+      else lista.insertBefore(elemento, atual);
+    }
+    lista.style.transform = `translateY(${janela.topos[de]}px)`;
+    janela.de = de;
+    janela.ate = ate;
+    janela.elementos = elementos;
+    janela.sujo = false;
+    aoDesenhar?.();
+    return true;
+  }
+
+  raiz.addEventListener("scroll", () => desenhar());
+
+  return {
+    // Troca a lista de faixas (depois de cada edição).
+    definir(faixas, colunas) {
+      janela.faixas = faixas;
+      janela.colunas = colunas;
+      raiz.style.setProperty("--colunas", String(colunas));
+      calcularTopos();
+      janela.sujo = true;
+    },
+    // A fonte mudou: as alturas mudam junto.
+    medir() {
+      medirAlturas();
+      calcularTopos();
+      janela.sujo = true;
+    },
+    desenhar,
+    elemento: (indice) => janela.elementos.get(indice) || null,
+    elementos: () => janela.elementos,
+    topo: (indice) => janela.inicio + janela.topos[indice],
+    visivel: () => janela.visivel,
+    altura: (indice) => altura(janela.faixas[indice]),
+    alturaFaixa: () => janela.alturas.faixa,
+  };
 }
 
-export { desenharPareada };
+export { criarJanela };

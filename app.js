@@ -1,8 +1,8 @@
 import { tabelas } from "./tabelas.js";
 import { classificar, preparar, resumo } from "./comandos.js?edicao=26";
-import { formatar } from "./pagina.js?edicao=30";
-import { montarFaixas } from "./faixas.js?edicao=28";
-import { desenharPareada } from "./pareada.js?edicao=30";
+import { formatar } from "./pagina.js?edicao=31";
+import { montarFaixas } from "./faixas.js?edicao=29";
+import { criarJanela } from "./pareada.js?edicao=33";
 import {
   apagarNaBorda,
   editavel,
@@ -82,16 +82,32 @@ function linhasDoTexto() {
   return $("texto").value.split("\n");
 }
 
+// Linha e coluna do cursor sem partir o texto inteiro: num livro grande isso roda várias
+// vezes por tecla.
+const contagem = { valor: null, total: 1 };
+
+function quebrasAte(valor, ate) {
+  let total = 0;
+  for (let i = valor.indexOf("\n"); i !== -1 && i < ate; i = valor.indexOf("\n", i + 1)) total += 1;
+  return total;
+}
+
 function posicao() {
   const area = $("texto");
+  const valor = area.value;
   const ate = area.selectionStart;
-  const antes = area.value.slice(0, ate);
-  const partes = antes.split("\n");
+  if (contagem.valor !== valor) {
+    contagem.valor = valor;
+    contagem.total = quebrasAte(valor, Infinity) + 1;
+  }
+  const inicio = ate === 0 ? 0 : valor.lastIndexOf("\n", ate - 1) + 1;
+  const fim = valor.indexOf("\n", ate);
   return {
-    linha: partes.length - 1,
-    coluna: partes[partes.length - 1].length,
+    linha: quebrasAte(valor, ate),
+    coluna: ate - inicio,
     selecionados: area.selectionEnd - area.selectionStart,
-    total: linhasDoTexto().length,
+    total: contagem.total,
+    texto: valor.slice(inicio, fim === -1 ? valor.length : fim),
   };
 }
 
@@ -305,8 +321,7 @@ function desenharFaixa(item, cursor) {
 
 function atualizarStatus() {
   const cursor = posicao();
-  const linhas = linhasDoTexto();
-  const linha = linhas[cursor.linha] ?? "";
+  const linha = cursor.texto;
   $("st-lin").textContent = `Lin: ${cursor.linha + 1}`;
   $("st-col").textContent = `Col: ${cursor.coluna + 1}`;
   $("st-sel").textContent = `Sel: ${cursor.selecionados} | ${cursor.total}`;
@@ -428,9 +443,10 @@ const pareado = {
   texto: null,
   sujo: true,
   faixas: [],
-  elementos: [],
-  desenho: null,
+  janela: null,
   sujoTotal: true,
+  cursorFaixa: null,
+  cursorColuna: 0,
   inicios: [0],
   colunaAlvo: null,
   ultimoIndice: 0,
@@ -441,25 +457,40 @@ const pareado = {
 function desenharModoPareado(seguir = true) {
   sincronizarModo();
   const area = $("texto");
+  // Com as alturas medidas de novo (fonte, opções), a tela volta a mostrar o cursor.
+  const remedir = pareado.sujoTotal;
   if (pareado.sujo || pareado.texto !== area.value) reconstruirPareado();
-  posicionarCursorPareado(seguir);
+  posicionarCursorPareado(seguir || remedir);
+}
+
+// Só as faixas perto da tela existem no DOM (pareada.js); cada vez que a janela é redesenhada
+// (rolagem, edição), o cursor e a seleção são pintados de novo nas faixas que apareceram.
+function janelaPareada() {
+  if (!pareado.janela) {
+    pareado.janela = criarJanela($("pareada"), {
+      aoDesenhar: () => {
+        pintarSelecaoPareada();
+        colocarCursorPareado();
+      },
+    });
+  }
+  return pareado.janela;
 }
 
 function reconstruirPareado() {
   const area = $("texto");
   const linhas = linhasDoTexto();
   const op = opcoes();
-  const formato = formatar(linhas, op, false);
-  const raiz = $("pareada");
-  const rolagem = raiz.scrollTop;
+  const formato = formatar(linhas, op, false, { semVista: true });
+  const janela = janelaPareada();
   pareado.faixas = montarFaixas(linhas, formato, op);
-  pareado.desenho = desenharPareada(raiz, pareado.faixas, formato.colunas, pareado.sujoTotal ? null : pareado.desenho);
-  pareado.elementos = pareado.desenho.elementos;
-  pareado.sujoTotal = false;
   pareado.texto = area.value;
   pareado.inicios = iniciosDasLinhas(area.value);
   pareado.sujo = false;
-  raiz.scrollTop = rolagem;
+  janela.definir(pareado.faixas, formato.colunas);
+  if (pareado.sujoTotal) janela.medir();
+  pareado.sujoTotal = false;
+  // O desenho fica para posicionarCursorPareado, que sabe para onde a tela vai.
   $("painel-titulo").textContent = `Pareado · ${formato.colunas}×${formato.altura} · ${formato.paginas} páginas`;
 }
 
@@ -491,14 +522,10 @@ function pintarSelecaoPareada() {
   const ate = area.selectionEnd;
   raiz.classList.toggle("com-selecao", de < ate);
   if (de >= ate) return;
-  const primeiro = pareado.elementos.find(Boolean);
-  if (primeiro) {
-    const medidas = medidasPareadas(primeiro);
-    raiz.style.setProperty("--cela", `${medidas.braille}px`);
-  }
-  pareado.faixas.forEach((faixa, indice) => {
-    const elemento = pareado.elementos[indice];
-    if (!elemento) return;
+  const medidas = medidasPareadas();
+  if (medidas) raiz.style.setProperty("--cela", `${medidas.braille}px`);
+  janelaPareada().elementos().forEach((elemento, indice) => {
+    const faixa = pareado.faixas[indice];
     const selecao = selecaoNaFaixa(faixa, pareado.inicios, pareado.texto, de, ate);
     if (!selecao) return;
     const tinta = document.createElement("span");
@@ -516,42 +543,69 @@ function pintarSelecaoPareada() {
   });
 }
 
-function posicionarCursorPareado(seguir) {
-  sincronia.de = $("texto").selectionStart;
-  sincronia.ate = $("texto").selectionEnd;
-  pintarSelecaoPareada();
+// Põe o cursor na faixa dele, se ela estiver desenhada (sem rolar).
+function colocarCursorPareado() {
   const raiz = $("pareada");
-  const posicao = posicaoPareada(indiceDoCursor());
-  let elemento = pareado.elementos[posicao.faixa];
-  if (!elemento) {
-    const vizinha = vizinhaEditavel(pareado.faixas, posicao.faixa, 1) ?? vizinhaEditavel(pareado.faixas, posicao.faixa, -1);
-    elemento = vizinha != null ? pareado.elementos[vizinha] : null;
-  }
   for (const anterior of raiz.querySelectorAll(".faixa.atual")) anterior.classList.remove("atual");
   if (!pareado.cursor) {
     pareado.cursor = document.createElement("span");
     pareado.cursor.className = "cursor-pareado";
   }
-  if (!elemento) return;
-  elemento.classList.add("atual");
-  elemento.querySelector(".lado-tinta").append(pareado.cursor);
-  pareado.cursor.style.setProperty("--coluna", String(posicao.coluna));
-  // Reinicia a piscada para o cursor ficar visível logo depois de cada movimento.
-  pareado.cursor.classList.remove("piscando");
-  void pareado.cursor.offsetWidth;
-  pareado.cursor.classList.add("piscando");
-  if (seguir) {
-    const topo = elemento.offsetTop;
-    const margem = elemento.offsetHeight * 2;
-    if (topo < raiz.scrollTop + margem) raiz.scrollTop = Math.max(0, topo - margem);
-    else if (topo + elemento.offsetHeight > raiz.scrollTop + raiz.clientHeight - margem) {
-      raiz.scrollTop = topo + elemento.offsetHeight - raiz.clientHeight + margem;
-    }
+  const elemento = pareado.cursorFaixa != null ? janelaPareada().elemento(pareado.cursorFaixa) : null;
+  const tinta = elemento?.querySelector(".lado-tinta");
+  if (!tinta) {
+    pareado.cursor.remove();
+    return;
   }
+  elemento.classList.add("atual");
+  tinta.append(pareado.cursor);
+  pareado.cursor.style.setProperty("--coluna", String(pareado.cursorColuna));
 }
 
-function medidasPareadas(elemento) {
+function posicionarCursorPareado(seguir) {
+  sincronia.de = $("texto").selectionStart;
+  sincronia.ate = $("texto").selectionEnd;
+  const raiz = $("pareada");
+  const janela = janelaPareada();
+  const posicao = posicaoPareada(indiceDoCursor());
+  let alvo = posicao.faixa;
+  if (!janela.altura(alvo)) {
+    alvo = vizinhaEditavel(pareado.faixas, posicao.faixa, 1) ?? vizinhaEditavel(pareado.faixas, posicao.faixa, -1);
+  }
+  pareado.cursorFaixa = alvo;
+  pareado.cursorColuna = posicao.coluna;
+  // A posição da faixa vem da soma das alturas: rolar não depende de ela estar desenhada.
+  if (seguir && alvo != null) {
+    const topo = janela.topo(alvo);
+    const altura = janela.altura(alvo);
+    const margem = altura * 2;
+    if (topo < raiz.scrollTop + margem) raiz.scrollTop = Math.max(0, topo - margem);
+    else if (topo + altura > raiz.scrollTop + janela.visivel() - margem) {
+      raiz.scrollTop = topo + altura - janela.visivel() + margem;
+    }
+  }
+  if (!janela.desenhar()) {
+    pintarSelecaoPareada();
+    colocarCursorPareado();
+  }
+  // Reinicia a piscada para o cursor ficar visível logo depois de cada movimento: trocar de
+  // animação recomeça do zero sem pedir layout.
+  pareado.piscada = !pareado.piscada;
+  pareado.cursor.classList.toggle("piscando", pareado.piscada);
+  pareado.cursor.classList.toggle("piscando-b", !pareado.piscada);
+}
+
+// Largura de uma coluna de tinta e de uma cela, medidas numa faixa de texto desenhada.
+function medidasPareadas() {
   if (pareado.medidas) return pareado.medidas;
+  let elemento = null;
+  for (const candidato of janelaPareada().elementos().values()) {
+    if (candidato.querySelector(".lado-braille")) {
+      elemento = candidato;
+      break;
+    }
+  }
+  if (!elemento) return null;
   const regua = (alvo, texto) => {
     const span = document.createElement("span");
     span.textContent = texto;
@@ -579,7 +633,7 @@ function indiceDoClique(evento, sobLetra = false) {
     if (vizinha == null) return null;
     return indiceDaPosicao(pareado.faixas, pareado.inicios, pareado.texto, { faixa: vizinha, coluna: 0 });
   }
-  const medidas = medidasPareadas(linha);
+  const medidas = medidasPareadas();
   const ladoBraille = linha.querySelector(".lado-braille");
   const caixaBraille = ladoBraille.getBoundingClientRect();
   if (evento.clientX >= caixaBraille.left) {
@@ -610,7 +664,7 @@ function teclaPareada(evento) {
     const atual = posicaoPareada(indiceDoCursor());
     const alvo = pareado.colunaAlvo ?? atual.coluna;
     const passo = evento.key === "ArrowUp" || evento.key === "PageUp" ? -1 : 1;
-    const alturaFaixa = pareado.elementos.find(Boolean)?.offsetHeight || 30;
+    const alturaFaixa = janelaPareada().alturaFaixa();
     const vezes = vertical ? 1 : Math.max(1, Math.floor($("pareada").clientHeight / alturaFaixa) - 2);
     let destino = atual.faixa;
     for (let i = 0; i < vezes; i += 1) {
@@ -779,6 +833,8 @@ function aplicarFonte(tamanho) {
   $("texto").style.fontSize = `${px}px`;
   $("pareada").style.setProperty("--fonte", `${px}px`);
   pareado.medidas = null;
+  pareado.sujo = true;
+  pareado.sujoTotal = true;
 }
 
 function restaurar() {
@@ -1504,7 +1560,10 @@ function seguirArrasto() {
   let passo = 0;
   if (y < caixa.top + 24) passo = -Math.min(40, caixa.top + 24 - y);
   else if (y > caixa.bottom - 24) passo = Math.min(40, y - caixa.bottom + 24);
-  if (passo) raiz.scrollTop += passo;
+  if (passo) {
+    raiz.scrollTop += passo;
+    janelaPareada().desenhar();
+  }
   const indice = indiceNoPonto(x, y);
   if (indice != null) {
     const area = $("texto");

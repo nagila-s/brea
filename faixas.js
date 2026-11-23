@@ -14,7 +14,7 @@
 //
 // Toda linha do texto aparece em pelo menos uma faixa, para o editor sempre saber onde ela está.
 
-import { classificar, preparar } from "./comandos.js?edicao=26";
+import { aplicar, classificar } from "./comandos.js?edicao=26";
 import { caractereMeta } from "./motor.js?edicao=26";
 
 // Marcações que valem para um bloco e viram fundo colorido no editor.
@@ -27,6 +27,32 @@ function marcasDe(info) {
   if (info.ingles) marcas.push("I+");
   if (info.margem) marcas.push("M");
   return marcas;
+}
+
+// As marcas que valem em cada linha do texto. Linhas seguidas com as mesmas marcas dividem a
+// mesma lista, para a montagem não criar um objeto por linha a cada tecla.
+function marcasPorLinha(linhas) {
+  const doc = { recuo: false, ajuste: true, silabas: null, ingles: false, margem: "" };
+  const resultado = new Array(linhas.length);
+  let chave = "";
+  let atual = [];
+  for (let indice = 0; indice < linhas.length; indice += 1) {
+    const linha = linhas[indice];
+    if (linha.startsWith("<")) {
+      const comando = classificar(linha);
+      if (comando) {
+        aplicar(doc, comando);
+        const nova = marcasDe(doc);
+        const outra = nova.join(",");
+        if (outra !== chave) {
+          chave = outra;
+          atual = nova;
+        }
+      }
+    }
+    resultado[indice] = atual;
+  }
+  return resultado;
 }
 
 // Título e número da página em tinta, na mesma disposição do cabeçalho braille.
@@ -83,6 +109,16 @@ function tintaDaLinha(celas, linhas, usados) {
   return { texto, trechos };
 }
 
+// A tinta fica guardada no próprio item da paginação, que pagina.js reaproveita enquanto o
+// parágrafo não muda; um parágrafo é montado de uma vez, com o seu próprio conjunto de usados.
+function tintaDoItem(item, linhas, usados) {
+  if (item.tintaPronta) return item.tintaPronta;
+  if (!item.grupo) return tintaDaLinha(item.celas, linhas, usados);
+  const doGrupo = new Set();
+  for (const membro of item.grupo) membro.tintaPronta = tintaDaLinha(membro.celas, linhas, doGrupo);
+  return item.tintaPronta;
+}
+
 function primeiraLinha(faixa) {
   if (faixa.trechos?.length) return faixa.trechos[0].linha;
   return faixa.linha ?? null;
@@ -91,7 +127,7 @@ function primeiraLinha(faixa) {
 function montarFaixas(linhas, formato, opcoes = {}) {
   const faixas = [];
   const usados = new Set();
-  const estado = preparar(linhas);
+  const marcas = marcasPorLinha(linhas);
 
   (formato.estrutura || []).forEach((pagina, indice) => {
     if (indice > 0) {
@@ -124,12 +160,12 @@ function montarFaixas(linhas, formato, opcoes = {}) {
           braille: item.celas,
           tinta: "",
           linha: item.origem,
-          marcas: marcasDe(estado[item.origem]),
+          marcas: marcas[item.origem] || [],
           pagina: indice,
         });
         continue;
       }
-      const { texto, trechos } = tintaDaLinha(item.celas, linhas, usados);
+      const { texto, trechos } = tintaDoItem(item, linhas, usados);
       const linha = trechos[0]?.linha ?? item.origem;
       faixas.push({
         tipo: "texto",
@@ -137,7 +173,7 @@ function montarFaixas(linhas, formato, opcoes = {}) {
         tinta: texto,
         trechos,
         linha,
-        marcas: marcasDe(estado[linha]),
+        marcas: marcas[linha] || [],
         pagina: indice,
       });
     }
