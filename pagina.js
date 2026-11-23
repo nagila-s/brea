@@ -211,6 +211,28 @@ function origemDe(celas, reserva) {
   return reserva;
 }
 
+// Coluna, na linha original, de cada posição do texto que vai ao tradutor: o TAB vira quatro
+// espaços que apontam para a mesma coluna. Tem uma posição a mais, a do fim da linha.
+function mapaDaLinha(original) {
+  const mapa = [];
+  for (let coluna = 0; coluna < original.length; coluna += 1) {
+    if (original[coluna] === "\t") mapa.push(coluna, coluna, coluna, coluna);
+    else mapa.push(coluna);
+  }
+  mapa.push(original.length);
+  return mapa;
+}
+
+// Liga a cela ao trecho exato do texto de onde veio (linha e colunas). Celas criadas pela
+// paginação (recuo, centralização, hífen do corte, espaço entre linhas) não têm fonte.
+function comFonte(cela, parte, mapa) {
+  if (!mapa || cela.de == null) return cela;
+  const de = mapa[cela.de];
+  const ate = mapa[cela.ate] ?? mapa[mapa.length - 1];
+  if (de != null) cela.fonte = { linha: parte.origem, de, ate };
+  return cela;
+}
+
 // Como em 0049BAC0: cada linha do texto é traduzida com o modo inglês dela e entra no
 // buffer do parágrafo; entre uma linha e outra vai um espaço.
 function celasDasPartes(partes, opcoes, cache) {
@@ -221,8 +243,9 @@ function celasDasPartes(partes, opcoes, cache) {
     if (anterior && !anterior.endsWith("-") && !anterior.endsWith(" ") && !parte.texto.startsWith(" ")) {
       celas.push({ ...espaco(), ...extra });
     }
+    const mapa = parte.fazMapa?.();
     for (const cela of celasDe(parte.texto, { ...opcoes, ingles: Boolean(parte.ingles) }, cache)) {
-      celas.push({ ...cela, ...extra });
+      celas.push(comFonte({ ...cela, ...extra }, parte, mapa));
     }
     anterior = parte.texto;
   }
@@ -238,7 +261,9 @@ function separaNoCorte(celas, util) {
 
 // Cada linha leva a página em tinta do momento em que o original a gravaria: a cortada, a da
 // linha do texto que fez o buffer passar da largura; a sobra, a do fechamento do parágrafo.
-function encaixar(partes, util, recuo, opcoes, cache, tintaFinal) {
+// `inteiras`: números das linhas do parágrafo que não podem terminar com palavra separada
+// (a última linha de uma página; ver formatar).
+function encaixar(partes, util, recuo, opcoes, cache, tintaFinal, inteiras = []) {
   const linhas = [];
   let pendente = celasDasPartes(partes, opcoes, cache);
   while (pendente.length && byteTexto(pendente[pendente.length - 1]) === 0x20) pendente.pop();
@@ -252,7 +277,8 @@ function encaixar(partes, util, recuo, opcoes, cache, tintaFinal) {
       linhas.push({ celas: atual, origem: origemDe(atual, reserva), tinta: tintaFinal });
       break;
     }
-    const corte = partirImpresso(atual, util, separaNoCorte(atual, util));
+    const separar = !inteiras.includes(linhas.length) && separaNoCorte(atual, util);
+    const corte = partirImpresso(atual, util, separar);
     const tintaDoCorte = (atual[util] ?? atual[atual.length - 1])?.tinta ?? tintaFinal;
     const cabeca = corte.cabeca.slice();
     if (corte.hifen && hifen) cabeca.push({ ...hifen, cortada: true });
@@ -271,6 +297,10 @@ function encaixar(partes, util, recuo, opcoes, cache, tintaFinal) {
   return linhas;
 }
 
+function terminaSeparada(item) {
+  return Boolean(item.celas[item.celas.length - 1]?.cortada);
+}
+
 function centrar(celas, util) {
   if (celas.length >= util) return celas.slice(0, util);
   const esquerda = Math.floor((util - celas.length) / 2);
@@ -283,7 +313,8 @@ function montarSegmentos(linhas, opcoes, avisos = []) {
   const doc = documento(opcoes);
   const segmentos = [];
   let fluxo = [];
-  const parte = (texto, origem) => ({ texto, origem, ingles: doc.ingles, silabas: doc.silabas, tinta: doc.paginaTinta });
+  // O mapa de colunas só é calculado quando o parágrafo precisa ser traduzido de novo.
+  const parte = (texto, origem, fazMapa) => ({ texto, origem, fazMapa, ingles: doc.ingles, silabas: doc.silabas, tinta: doc.paginaTinta });
 
   function fecharFluxo() {
     if (!fluxo.length) return;
@@ -315,9 +346,11 @@ function montarSegmentos(linhas, opcoes, avisos = []) {
     }
 
     const texto = bruta;
+    const original = linhas[indice];
+    const mapa = () => mapaDaLinha(original);
     if (!doc.ajuste) {
       fecharFluxo();
-      segmentos.push({ tipo: "fixa", texto, origem: indice, centro: false, ...foto(doc) });
+      segmentos.push({ tipo: "fixa", texto, fazMapa: mapa, origem: indice, centro: false, ...foto(doc) });
       continue;
     }
     if (texto.trim() === "") {
@@ -328,20 +361,24 @@ function montarSegmentos(linhas, opcoes, avisos = []) {
     const lead = (texto.match(/^ */) || [""])[0].length;
     if (lead >= 10) {
       fecharFluxo();
-      segmentos.push({ tipo: "fixa", texto: texto.trim(), origem: indice, centro: true, ...foto(doc) });
+      const centro = texto.trim();
+      segmentos.push({ tipo: "fixa", texto: centro, fazMapa: () => mapa().slice(lead, lead + centro.length + 1), origem: indice, centro: true, ...foto(doc) });
     } else if (lead === 1) {
       // 0049BAC0: fecha o parágrafo, apaga o espaço e a linha segue juntando as próximas
       // (é aí que o <R+> põe os dois espaços nas linhas de baixo).
       fecharFluxo();
-      fluxo.push(parte(texto.slice(1), indice));
+      fluxo.push(parte(texto.slice(1), indice, () => mapa().slice(1)));
     } else if (lead >= 2) {
       fecharFluxo();
-      fluxo.push(parte(texto.replace(/^ +/, "  "), indice));
+      fluxo.push(parte(texto.replace(/^ +/, "  "), indice, () => {
+        const todo = mapa();
+        return [todo[0], todo[1], ...todo.slice(lead)];
+      }));
     } else if (texto.startsWith("•")) {
       // 0x95 (•) no início também abre parágrafo novo.
       fecharFluxo();
-      fluxo.push(parte(texto, indice));
-    } else fluxo.push(parte(texto, indice));
+      fluxo.push(parte(texto, indice, mapa));
+    } else fluxo.push(parte(texto, indice, mapa));
   }
   fecharFluxo();
   return segmentos;
@@ -391,8 +428,120 @@ function cabecalho(pagina, numero, opcoes, cache) {
   return [...margem, ...corpo].slice(0, pagina.colunas);
 }
 
-function formatar(linhas, opcoes, tinta) {
-  const cache = new Map();
+// A tradução de um trecho só depende do texto e das opções de tradução. O cache sobrevive entre
+// uma formatação e a próxima, então digitar só retraduz a linha alterada.
+const CACHES = new Map();
+function cacheDaTraducao(opcoes) {
+  const chave = JSON.stringify([
+    opcoes.codigo, opcoes.matematica, opcoes.maiuscula, opcoes.maiusculaPalavra, opcoes.numero, opcoes.correcoes ?? null,
+  ]);
+  let cache = CACHES.get(chave);
+  if (!cache || cache.size > 200000) {
+    if (CACHES.size > 8) CACHES.clear();
+    cache = new Map();
+    CACHES.set(chave, cache);
+  }
+  return cache;
+}
+
+// Linhas braille de cada parágrafo, guardadas pelo conteúdo dele. A chave usa os números de
+// linha relativos ao começo do parágrafo; se o parágrafo só mudou de lugar (Enter acima dele),
+// a versão guardada é movida: os números de linha mudam no lugar, sem traduzir nem copiar.
+let PARAGRAFOS = new WeakMap();
+
+// Para os testes: formata do zero, como se fosse a primeira vez.
+function esquecerParagrafos() {
+  PARAGRAFOS = new WeakMap();
+}
+let passagem = 0;
+
+function chaveDoParagrafo(seg, partes, util, linhas, inteiras) {
+  const base = partes[0].origem;
+  let chave = `${seg.tipo}|${util}|${inteiras.join(",")}|${seg.tipo === "fluxo" && seg.recuo ? 1 : 0}|${seg.centro ? 1 : 0}|${seg.colunas}|${seg.margem}|${seg.paginaTinta}`;
+  for (const parte of partes) {
+    const original = linhas[parte.origem];
+    chave += `\u0001${parte.origem - base}\u0002${parte.ingles ? 1 : 0}${parte.silabas === false ? 0 : 1}\u0002${parte.tinta}\u0002${original}`;
+    if (parte.texto !== original) chave += `\u0002${parte.texto}`;
+  }
+  return chave;
+}
+
+function moverParagrafo(versao, base) {
+  const delta = base - versao.base;
+  const vistos = new Set();
+  for (const item of versao.itens) {
+    item.origem += delta;
+    for (const cela of item.celas) {
+      if (vistos.has(cela)) continue;
+      vistos.add(cela);
+      if (cela.linhaOrigem != null) cela.linhaOrigem += delta;
+      if (cela.fonte && !vistos.has(cela.fonte)) {
+        vistos.add(cela.fonte);
+        cela.fonte.linha += delta;
+      }
+    }
+    for (const trecho of item.tintaPronta?.trechos || []) {
+      if (vistos.has(trecho)) continue;
+      vistos.add(trecho);
+      trecho.linha += delta;
+    }
+  }
+  versao.base = base;
+}
+
+function copiarParagrafo(versao) {
+  const itens = versao.itens.map((item) => ({
+    ...item,
+    tintaPronta: null,
+    celas: item.celas.map((cela) => (cela.fonte ? { ...cela, fonte: { ...cela.fonte } } : { ...cela })),
+  }));
+  for (const item of itens) item.grupo = itens;
+  return { base: versao.base, itens, passagem: 0 };
+}
+
+function linhasDoParagrafo(seg, partes, util, margem, opcoes, cache, linhas, inteiras = []) {
+  let memoria = PARAGRAFOS.get(cache);
+  if (!memoria || memoria.total > 40000) {
+    memoria = { mapa: new Map(), total: 0 };
+    PARAGRAFOS.set(cache, memoria);
+  }
+  const chave = chaveDoParagrafo(seg, partes, util, linhas, inteiras);
+  const base = partes[0].origem;
+  // Por chave, uma versão para cada posição (dois parágrafos iguais não brigam pela mesma).
+  let versoes = memoria.mapa.get(chave);
+  if (versoes) {
+    let versao = versoes.get(base);
+    if (!versao) {
+      // Uma versão que esta formatação ainda não usou pode mudar de lugar; senão, copia.
+      for (const outra of versoes.values()) if (outra.passagem !== passagem) versao = outra;
+      if (versao) versoes.delete(versao.base);
+      else {
+        versao = copiarParagrafo(versoes.values().next().value);
+        memoria.total += 1;
+      }
+      moverParagrafo(versao, base);
+      versoes.set(base, versao);
+    }
+    versao.passagem = passagem;
+    return versao.itens;
+  }
+  versoes = new Map();
+  memoria.mapa.set(chave, versoes);
+  const produzidas = encaixar(partes, util, seg.tipo === "fluxo" && seg.recuo, opcoes, cache, seg.paginaTinta, inteiras);
+  const itens = produzidas.map((linha) => {
+    const miolo = seg.centro ? centrar(linha.celas, util) : linha.celas;
+    return { tipo: "celas", celas: [...margem, ...miolo].slice(0, seg.colunas), origem: linha.origem, tinta: linha.tinta, conta: true };
+  });
+  // O grupo deixa a tinta ser montada uma vez para o parágrafo todo (faixas.js).
+  for (const item of itens) item.grupo = itens;
+  versoes.set(base, { base, itens, passagem });
+  memoria.total += 1;
+  return itens;
+}
+
+function formatar(linhas, opcoes, tinta, { semVista = false } = {}) {
+  const cache = cacheDaTraducao(opcoes);
+  passagem += 1;
   const avisos = [];
   const segmentos = montarSegmentos(linhas, opcoes, avisos);
   const paginas = [];
@@ -412,9 +561,11 @@ function formatar(linhas, opcoes, tinta) {
 
   // O cabeçalho sai quando a primeira linha da página é gravada (0049B91E), com a página em
   // tinta daquele momento; um <nnn> posterior só aparece na página seguinte.
-  function abre(seg, tinta = seg.paginaTinta) {
+  function abre(seg, tinta = seg.paginaTinta, motivo = paginas.length ? "automatica" : "inicio") {
     if (atual) return;
     atual = {
+      motivo,
+      quebraLinha: motivo === "forcada" || motivo === "titulo" ? seg.origem : null,
       colunas: seg.colunas,
       linhasPagina: seg.linhasPagina,
       titula: seg.titula,
@@ -438,12 +589,20 @@ function formatar(linhas, opcoes, tinta) {
     return Math.max(1, faixa ? atual.linhasPagina - 1 : atual.linhasPagina);
   }
 
+  // A próxima linha emitida cairá na última posição da página? (mesma conta de emite)
+  function ultimaDaPagina(seg) {
+    const novaPagina = !atual || seg.colunas !== atual.colunas || seg.linhasPagina !== atual.linhasPagina || atual.corpo.length >= limite();
+    const teto = novaPagina ? Math.max(1, seg.titula ? seg.linhasPagina - 1 : seg.linhasPagina) : limite();
+    const posicao = novaPagina ? 0 : atual.corpo.length;
+    return posicao === teto - 1;
+  }
+
   function emite(item, seg) {
     const tintaDaLinha = item.tinta !== undefined ? item.tinta : seg.paginaTinta;
     if (!atual) abre(seg, tintaDaLinha);
     else if (seg.colunas !== atual.colunas || seg.linhasPagina !== atual.linhasPagina) {
       fecha();
-      abre(seg, tintaDaLinha);
+      abre(seg, tintaDaLinha, "medida");
     }
     if (item.branco && atual.corpo.length === 0 && (atual.titula || atual.paginaTinta) && opcoes.tiraBrancas !== false) return;
     if (atual.corpo.length >= limite()) {
@@ -467,7 +626,7 @@ function formatar(linhas, opcoes, tinta) {
           continue;
         }
         fecha();
-        abre(seg);
+        abre(seg, seg.paginaTinta, "titulo");
         atual.manter = true;
         atual.reinicio = seg.reinicia;
         continue;
@@ -478,7 +637,7 @@ function formatar(linhas, opcoes, tinta) {
         if (!atual) abre(seg);
         atual.manter = true;
         fecha();
-        abre(seg);
+        abre(seg, seg.paginaTinta, "forcada");
         atual.manter = true;
         continue;
       }
@@ -493,16 +652,23 @@ function formatar(linhas, opcoes, tinta) {
     const margem = margemDe(seg.margem, opcoes, cache);
     const util = Math.max(4, seg.colunas - margem.length);
     if (seg.tipo === "branco") {
-      emite({ tipo: "celas", celas: [...margem], origem: seg.origem, conta: true }, seg);
+      emite({ tipo: "celas", celas: [...margem], origem: seg.origem, vazia: true, conta: true }, seg);
       continue;
     }
     const partes = seg.tipo === "fluxo"
       ? seg.partes
-      : [{ texto: seg.texto, origem: seg.origem, ingles: seg.ingles, silabas: seg.silabas, tinta: seg.paginaTinta }];
-    const produzidas = encaixar(partes, util, seg.tipo === "fluxo" && seg.recuo, opcoes, cache, seg.paginaTinta);
-    for (const linha of produzidas) {
-      const miolo = seg.centro ? centrar(linha.celas, util) : linha.celas;
-      emite({ tipo: "celas", celas: [...margem, ...miolo].slice(0, seg.colunas), origem: linha.origem, tinta: linha.tinta, conta: true }, seg);
+      : [{ texto: seg.texto, fazMapa: seg.fazMapa, origem: seg.origem, ingles: seg.ingles, silabas: seg.silabas, tinta: seg.paginaTinta }];
+    // Regra nova (não existia no original): a última linha de uma página não termina com
+    // palavra separada. Se isso aconteceria, o parágrafo é recortado dali em diante sem
+    // separar sílabas naquela linha, e a palavra inteira vai para a página seguinte.
+    let inteiras = [];
+    let itens = linhasDoParagrafo(seg, partes, util, margem, opcoes, cache, linhas, inteiras);
+    for (let indice = 0; indice < itens.length; indice += 1) {
+      if (indice < itens.length - 1 && terminaSeparada(itens[indice]) && ultimaDaPagina(seg)) {
+        inteiras = [...inteiras, indice];
+        itens = linhasDoParagrafo(seg, partes, util, margem, opcoes, cache, linhas, inteiras);
+      }
+      emite(itens[indice], seg);
     }
   }
   fecha();
@@ -511,11 +677,20 @@ function formatar(linhas, opcoes, tinta) {
   }
 
   const vista = [];
+  const estrutura = [];
   proximoNumero = 1;
   paginas.forEach((pagina, indice) => {
     if (pagina.reinicio != null) proximoNumero = pagina.reinicio;
     let numero = proximoNumero;
     proximoNumero += 1;
+    estrutura.push({
+      ...pagina,
+      numero,
+      numeroTexto: pagina.titula ? (pagina.romano ? paraRomano(numero) : String(numero)) : "",
+      cabecalhoCelas: pagina.titula ? cabecalho(pagina, numero, opcoes, cache) : null,
+    });
+    // O editor pareado só usa a estrutura; a vista antiga (texto de cada linha) fica de fora.
+    if (semVista) return;
     if (indice > 0) {
       vista.push({
         tipo: "codigo",
@@ -561,6 +736,7 @@ function formatar(linhas, opcoes, tinta) {
 
   return {
     linhas: vista,
+    estrutura,
     paginas: paginas.length,
     colunas: paginas[0].colunas,
     altura: paginas[0].linhasPagina,
@@ -568,4 +744,4 @@ function formatar(linhas, opcoes, tinta) {
   };
 }
 
-export { formatar, paraRomano };
+export { esquecerParagrafos, formatar, paraRomano };

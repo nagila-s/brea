@@ -1,6 +1,27 @@
 :root {
-  color: #111;
-  background: #d9d9d9;
+  /* Paleta: preto e cinzas, amarelo só para destaque. */
+  --fundo: #0d0d0d;          /* fundo das barras e diálogos */
+  --superficie: #1a1a1a;     /* menus, barras, títulos de painel */
+  --superficie-2: #262626;   /* segunda barra, submenus */
+  --borda: #3a3a3a;
+  --borda-forte: #555;
+  --texto: #ededed;
+  --texto-suave: #a6a6a6;
+  --destaque: #ffd400;       /* amarelo */
+  --destaque-texto: #0d0d0d; /* texto sobre o amarelo */
+  --destaque-fundo: rgba(255, 212, 0, 0.16); /* linha atual, hover */
+  --aviso: #ffb340;
+  /* Área de edição: papel cinza claro com texto escuro. */
+  --papel: #e3e3e3;
+  --papel-texto: #141414;
+  --papel-suave: #5c5c5c;
+  --papel-borda: #b8b8b8;
+  --papel-destaque: rgba(255, 212, 0, 0.45);
+  --papel-marca: #c9a400;   /* amarelo mais escuro, legível sobre o cinza */
+  --papel-aviso: #9a4d00;
+  color: var(--texto);
+  background: var(--fundo);
+  color-scheme: dark;
   font-family: "Segoe UI", sans-serif;
   font-size: 14px;
 }
@@ -20,14 +41,14 @@ body {
 
 button, select, input { font: inherit; color: inherit; }
 
-.janela { background: #f2f2f2; border-bottom: 1px solid #b5b5b5; }
+.janela { background: var(--superficie); border-bottom: 1px solid var(--borda); }
 
 .menu {
   display: flex;
   gap: 2px;
   padding: 2px 6px 0;
-  background: #fff;
-  border-bottom: 1px solid #d0d0d0;
+  background: var(--superficie);
+  border-bottom: 1px solid var(--borda);
 }
 
 .menu-item { position: relative; }
@@ -41,8 +62,8 @@ button, select, input { font: inherit; color: inherit; }
 }
 
 .menu-item > button:hover, .ferramentas button:hover, .submenu button:hover, .acoes-dialogo button:hover {
-  background: #e7f0f8;
-  border-color: #b7cbe0;
+  background: var(--destaque-fundo);
+  border-color: var(--destaque);
 }
 
 .submenu {
@@ -52,9 +73,9 @@ button, select, input { font: inherit; color: inherit; }
   left: 0;
   min-width: 220px;
   padding: 4px;
-  background: #fff;
-  border: 1px solid #b5b5b5;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+  background: var(--superficie-2);
+  border: 1px solid var(--borda-forte);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.6);
 }
 
 .menu > button {
@@ -69,20 +90,18 @@ button, select, input { font: inherit; color: inherit; }
 
 .submenu button { display: block; width: 100%; text-align: left; }
 
-.submenu hr { border: 0; border-top: 1px solid #e0e0e0; margin: 4px 0; }
+.submenu hr { border: 0; border-top: 1px solid var(--borda); margin: 4px 0; }
 
 .submenu .submenu { top: 0; left: 100%; }
 
 .cinco {
   padding: 4px 10px 8px;
-  background: #eef3ea;
-  border-top: 1px solid #d5d5d5;
+  background: var(--superficie);
+  border-top: 1px solid var(--borda);
   font-family: "Segoe UI Symbol", "Segoe UI", sans-serif;
   font-size: 20px;
   line-height: 1.35;
 }
-
-.editor.revisor { background: #f6f1dc; }
 
 .perkins-mostra {
   font-family: "Segoe UI Symbol", "Segoe UI", sans-serif;
@@ -96,20 +115,21 @@ button, select, input { font: inherit; color: inherit; }
 
 dialog { max-width: 520px; }
 
-dialog fieldset { margin: 8px 0; }
+dialog fieldset { margin: 8px 0; border: 1px solid var(--borda-forte); border-radius: 3px; }
+
+dialog legend { color: var(--destaque); padding: 0 4px; }
 
 dialog label { display: flex; gap: 8px; align-items: center; margin: 4px 0; }
 
+/* Impressão: só a área montada na hora (app.js, imprimir), preto no branco. */
+.impressao { display: none; }
 @media print {
-  body[data-impressao="texto"] .painel,
-  body[data-impressao="texto"] .janela,
-  body[data-impressao="texto"] .status,
-  body[data-impressao="texto"] #cinco,
-  body[data-impressao="braille"] .editor,
-  body[data-impressao="braille"] .janela,
-  body[data-impressao="braille"] .status,
-  body[data-impressao="braille"] #cinco { display: none !important; }
-  body[data-impressao="braille"] .miolo { display: block; }
+  body[data-impressao] > :not(#impressao) { display: none !important; }
+  html:has(body[data-impressao]), body[data-impressao] { background: #fff !important; color: #000 !important; display: block; height: auto; }
+  .impressao:not([hidden]) { display: block; }
+  .impressao pre { margin: 0; white-space: pre-wrap; font-family: Consolas, "Cascadia Mono", monospace; font-size: 11pt; }
+  .impressao .folha-braille { font-family: "Segoe UI Symbol", "Segoe UI", sans-serif; font-size: 16pt; line-height: 1.25; white-space: pre; break-after: page; }
+  .impressao .folha-braille:last-child { break-after: auto; }
 }
 
 .ferramentas {
@@ -118,115 +138,68 @@ dialog label { display: flex; gap: 8px; align-items: center; margin: 4px 0; }
   flex-wrap: wrap;
   gap: 6px;
   padding: 4px 8px;
-  background: #d6e4f0;
+  background: var(--superficie);
+  border-bottom: 1px solid var(--borda);
 }
 
-.ferramentas.segunda { background: #c5d6ea; }
+.ferramentas.segunda { background: var(--superficie-2); }
 
 .separa {
   width: 1px;
   align-self: stretch;
-  background: #a9bfd4;
+  background: var(--borda-forte);
   margin: 2px 4px;
 }
 
 .cheque { display: flex; align-items: center; gap: 6px; }
 
+/* O textarea guarda o texto e recebe o teclado (acentos, colar, desfazer), mas não aparece:
+   quem a pessoa vê e clica é o editor pareado. */
 .editor {
-  height: 100%;
-  width: 100%;
-  min-width: 0;
-  min-height: 0;
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 400px;
+  height: 40px;
+  padding: 0;
   margin: 0;
-  padding: 12px 14px;
   border: 0;
   resize: none;
-  background: #fff;
-  /* Monoespaçada e com a largura das colunas braille: o texto quebra perto de onde o braille quebra. */
-  justify-self: start;
-  margin-left: 16px;
-  max-width: calc(100% - 16px);
+  opacity: 0;
+  pointer-events: none;
+  z-index: -1;
   font-family: Consolas, "Cascadia Mono", monospace;
-  font-size: 22px;
-  line-height: 1.45;
-  white-space: pre-wrap;
-  overflow-wrap: break-word;
-  overflow-x: hidden;
-  overflow-y: auto;
-  /* Os dois lados rolam juntos: a barra fica só na vista braille. */
-  scrollbar-width: none;
+  /* Sem quebra automática: com 77 mil caracteres, quebrar a cada tecla custava segundos. */
+  white-space: pre;
+  overflow-wrap: normal;
+  overflow: hidden;
+  contain: strict;
 }
-
-.editor::-webkit-scrollbar { display: none; }
-
-.editor:focus { outline: none; }
 
 .miolo {
   flex: 1;
   min-height: 0;
-  background: #fff;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
+  background: var(--papel);
+  color: var(--papel-texto);
+  display: flex;
 }
 
 .painel {
+  flex: 1;
   display: flex;
   flex-direction: column;
   min-width: 0;
   min-height: 0;
-  background: #fff;
-  border-left: 1px solid #c8c8c8;
+  background: var(--papel);
+  color: var(--papel-texto);
 }
 
 .painel-titulo {
   padding: 6px 12px;
-  background: #f3f3f3;
-  border-bottom: 1px solid #ddd;
+  background: var(--superficie);
+  border-bottom: 1px solid var(--borda);
+  color: var(--texto-suave);
   font-size: 13px;
-}
-
-#vista {
-  position: relative;
-  flex: 1;
-  overflow: auto;
-  padding: 12px 14px;
-}
-
-.linha-vista {
-  display: block;
-  height: var(--faixa, 26px);
-  line-height: var(--faixa, 26px);
-  padding: 0 2px;
-  white-space: pre;
-  overflow: hidden;
-  cursor: text;
-}
-
-.linha-vista.atual { background: #e7f4ff; }
-
-.linha-vista.braille {
-  font-family: "Segoe UI Symbol", "Segoe UI", sans-serif;
-  font-size: min(22px, calc(var(--faixa, 26px) * 0.85));
-}
-
-.linha-vista.tinta {
-  font-family: Consolas, "Cascadia Mono", monospace;
-  font-size: min(16px, calc(var(--faixa, 26px) * 0.7));
-}
-
-.linha-vista.codigo {
-  color: #1f4b3a;
-  font-family: Consolas, "Cascadia Mono", monospace;
-  font-size: min(15px, calc(var(--faixa, 26px) * 0.65));
-}
-
-.linha-vista.nao { color: #8a4b08; }
-
-.linha-vista.separador {
-  color: #334;
-  font-size: 12px;
-  background: #f3f6f8;
-  border-top: 1px solid #c5d0d8;
 }
 
 .grupo {
@@ -237,7 +210,7 @@ dialog label { display: flex; gap: 8px; align-items: center; margin: 4px 0; }
   cursor: text;
 }
 
-.grupo.cursor { background: #fff3a0; }
+.grupo.cursor { background: var(--destaque); color: var(--destaque-texto); }
 
 .tinta-texto {
   font-family: Consolas, "Cascadia Mono", monospace;
@@ -271,27 +244,30 @@ dialog label { display: flex; gap: 8px; align-items: center; margin: 4px 0; }
   background: transparent;
 }
 
-.ponto.aceso { background: #111; }
+.ponto.aceso { background: currentColor; }
 
 .status {
   display: flex;
   gap: 0;
-  background: #f3f3f3;
-  border-top: 1px solid #c8c8c8;
+  background: var(--superficie);
+  border-top: 1px solid var(--borda);
+  color: var(--texto-suave);
   font-size: 13px;
 }
 
 .status span {
   padding: 4px 10px;
-  border-right: 1px solid #d0d0d0;
+  border-right: 1px solid var(--borda);
 }
 
 #st-car { flex: 1; }
 
-#st-doc { margin-left: auto; border-right: 0; border-left: 1px solid #d0d0d0; }
+#st-doc { margin-left: auto; border-right: 0; border-left: 1px solid var(--borda); }
 
 dialog {
-  border: 1px solid #b5b5b5;
+  background: var(--superficie-2);
+  color: var(--texto);
+  border: 1px solid var(--borda-forte);
   padding: 16px;
   width: min(420px, calc(100vw - 32px));
 }
@@ -304,4 +280,138 @@ dialog label, #busca-simbolo, #lista-simbolos { display: block; margin: 8px 0; }
 
 .acoes-dialogo { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
 
-.acoes-dialogo button { background: #1f4b3a; color: #fff; border-color: #1f4b3a; }
+.acoes-dialogo button { background: var(--destaque); color: var(--destaque-texto); border-color: var(--destaque); font-weight: 600; }
+
+.acoes-dialogo button:hover { background: #ffe14d; border-color: #ffe14d; }
+
+dialog::backdrop { background: rgba(0, 0, 0, 0.7); }
+
+input, select { background: var(--fundo); border: 1px solid var(--borda-forte); }
+
+input[type="checkbox"], input[type="radio"] { accent-color: var(--destaque); }
+
+:focus-visible { outline: 2px solid var(--destaque); outline-offset: 1px; }
+
+/* ---------- Vista pareada (PLANO-EDITOR, etapa 2) ---------- */
+:root {
+  /* Marcações de bloco: fundo claro atrás do texto e barra forte na margem. Provisórias. */
+  --marca-r: #cfe2f6;  --marca-r-forte: #3f7fc4;   /* R+ recuo */
+  --marca-f: #e4d6f4;  --marca-f-forte: #8457c2;   /* F- sem auto-ajuste */
+  --marca-s: #d3ecd8;  --marca-s-forte: #3a9152;   /* S- sem sílabas */
+  --marca-i: #f6dccb;  --marca-i-forte: #cf6b33;   /* I+ maiúsculas inglesas */
+  --marca-m: #e6dfcf;  --marca-m-forte: #8e7c55;   /* M margem */
+  --comentario: #d4d4d4;
+}
+
+.pareada {
+  flex: 1;
+  overflow: auto;
+  padding: 12px 16px 40vh;
+  /* Segue a fonte escolhida em Configurar > Fonte na tela (padrão 22). */
+  --fonte: 22px;
+  --altura-faixa: calc(var(--fonte) * 1.36);
+}
+.pareada.revisor { background: #ece4c4; }
+
+.faixa {
+  display: grid;
+  /* 1ch medido na fonte da tinta (Consolas 20px): a coluna cabe a largura braille inteira. */
+  font-family: Consolas, "Cascadia Mono", monospace;
+  font-size: calc(var(--fonte) * 0.91);
+  grid-template-columns: 22px calc(var(--colunas, 34) * 1ch + 24px) auto;
+  align-items: center;
+  height: var(--altura-faixa);
+  white-space: pre;
+}
+
+.faixa .barras { display: flex; gap: 2px; align-self: stretch; padding: 2px 0; }
+.faixa .barra { width: 4px; border-radius: 2px; }
+
+.lado-tinta {
+  padding: 0 12px 0 6px;
+  overflow: hidden;
+}
+
+.lado-braille {
+  font-family: "Segoe UI Symbol", "Segoe UI", sans-serif;
+  font-size: var(--fonte);
+  padding-left: 14px;
+  border-left: 1px solid var(--papel-borda);
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+}
+
+.faixa .escape { color: #9a9a9a; }
+
+/* O fundo da marcação fica atrás da tinta; o braille continua limpo. */
+.faixa.marcada .lado-tinta { background: var(--fundo-marca); align-self: stretch; display: flex; align-items: center; }
+.marca-r { --fundo-marca: var(--marca-r); --barra-marca: var(--marca-r-forte); }
+.marca-f { --fundo-marca: var(--marca-f); --barra-marca: var(--marca-f-forte); }
+.marca-s { --fundo-marca: var(--marca-s); --barra-marca: var(--marca-s-forte); }
+.marca-i { --fundo-marca: var(--marca-i); --barra-marca: var(--marca-i-forte); }
+.marca-m { --fundo-marca: var(--marca-m); --barra-marca: var(--marca-m-forte); }
+.barra.marca-r, .barra.marca-f, .barra.marca-s, .barra.marca-i, .barra.marca-m { background: var(--barra-marca); }
+
+.faixa-cabecalho { color: var(--papel-suave); }
+.faixa-cabecalho .lado-tinta { font-style: italic; }
+
+.faixa-comentario .lado-tinta { background: var(--comentario); color: var(--papel-suave); font-style: italic; align-self: stretch; display: flex; align-items: center; }
+
+.faixa-nota { color: var(--papel-aviso); }
+
+/* Possível parágrafo partido pelo Finalizar dentro do recuo (faixas.js, corteNoRecuo). */
+.faixa.corte-recuo .lado-tinta { box-shadow: inset 3px 0 0 var(--papel-aviso); }
+
+.faixa-quebra {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 22px;
+  color: var(--papel-suave);
+  font-size: 12px;
+}
+.faixa-quebra::before, .faixa-quebra::after { content: ""; flex: 1; border-top: 2px solid var(--papel-texto); }
+.faixa-quebra::before { flex: 0 0 22px; }
+.faixa-quebra.automatica::before, .faixa-quebra.automatica::after { border-top: 2px dashed var(--papel-suave); }
+
+.faixa.atual .lado-tinta, .faixa.atual .lado-braille { box-shadow: inset 0 -3px 0 var(--papel-marca); }
+
+.pareada { cursor: text; user-select: none; }
+.lado-tinta { position: relative; }
+.cursor-pareado {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  left: calc(6px + var(--coluna, 0) * 1ch);
+  width: 2px;
+  margin-left: -1px;
+  background: var(--papel-texto);
+  pointer-events: none;
+}
+.cursor-pareado.piscando { animation: piscar 1.06s steps(1) infinite; }
+.cursor-pareado.piscando-b { animation: piscar-b 1.06s steps(1) infinite; }
+@keyframes piscar { 50% { opacity: 0; } }
+@keyframes piscar-b { 50% { opacity: 0; } }
+.faixa.atual .lado-tinta, .faixa.atual .lado-braille { box-shadow: none; background-image: linear-gradient(var(--papel-destaque), var(--papel-destaque)); }
+
+/* Livro grande: só as faixas perto da tela existem (pareada.js). O trilho tem a altura do livro
+   inteiro e a janela desce até a primeira faixa desenhada. */
+.pareada { position: relative; overflow-anchor: none; }
+.trilho-pareado { position: relative; }
+.janela-pareada { position: absolute; top: 0; left: 0; right: 0; }
+
+/* Seleção no modo pareado: amarelo atrás da tinta e das celas correspondentes. */
+/* isolation: a seleção (z-index -1) fica acima do fundo do lado e abaixo das letras. */
+.lado-tinta, .lado-braille { position: relative; isolation: isolate; }
+.selecao-pareada {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  background: rgba(255, 196, 0, 0.6);
+  pointer-events: none;
+  z-index: -1;
+}
+.sel-tinta { left: calc(6px + var(--de) * 1ch); width: calc(var(--n) * 1ch); }
+.sel-braille { left: calc(14px + var(--de) * var(--cela, 22px)); width: calc(var(--n) * var(--cela, 22px)); }
+.pareada.com-selecao .cursor-pareado { opacity: 0.6; }
