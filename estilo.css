@@ -363,7 +363,24 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--destaque); }
   --comentario: #d4d4d4;
 }
 
-body.modo-pareado .editor,
+/* No modo pareado o textarea continua recebendo o teclado, mas não aparece. */
+body.modo-pareado .editor {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 400px;
+  height: 40px;
+  padding: 0;
+  margin: 0;
+  opacity: 0;
+  pointer-events: none;
+  z-index: -1;
+  /* Sem quebra automática: com 77 mil caracteres, quebrar a cada tecla custava segundos. */
+  white-space: pre;
+  overflow-wrap: normal;
+  overflow: hidden;
+  contain: strict;
+}
 body.modo-pareado #vista { display: none; }
 
 body.modo-pareado .painel { grid-column: 1 / -1; border-left: 0; }
@@ -435,3 +452,23 @@ body.modo-pareado .painel { grid-column: 1 / -1; border-left: 0; }
 .faixa-quebra.automatica::before, .faixa-quebra.automatica::after { border-top: 2px dashed var(--papel-suave); }
 
 .faixa.atual .lado-tinta, .faixa.atual .lado-braille { box-shadow: inset 0 -3px 0 var(--papel-marca); }
+
+.pareada { cursor: text; user-select: none; }
+.lado-tinta { position: relative; }
+.cursor-pareado {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  left: calc(6px + var(--coluna, 0) * 1ch);
+  width: 2px;
+  margin-left: -1px;
+  background: var(--papel-texto);
+  pointer-events: none;
+}
+.cursor-pareado.piscando { animation: piscar 1.06s steps(1) infinite; }
+@keyframes piscar { 50% { opacity: 0; } }
+.faixa.atual .lado-tinta, .faixa.atual .lado-braille { box-shadow: none; background-image: linear-gradient(var(--papel-destaque), var(--papel-destaque)); }
+
+/* Livro grande: o navegador só calcula o layout das faixas perto da tela. */
+.pareada > .faixa { content-visibility: auto; contain-intrinsic-size: auto 30px; }
+.pareada > .faixa-quebra { contain-intrinsic-size: auto 22px; }

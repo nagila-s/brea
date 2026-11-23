@@ -89,30 +89,66 @@ function linhaDaFaixa(faixa) {
   return linha;
 }
 
-function desenharPareada(raiz, faixas, colunas) {
+// Assinatura do que a faixa mostra: duas faixas com a mesma assinatura usam o mesmo elemento.
+function assinatura(faixa) {
+  if (faixa.tipo === "comando" || faixa.tipo === "oculta") return null;
+  const braille = faixa.braille ? faixa.braille.map((cela) => (cela.tipo === "espaco" ? "0" : cela.dots)).join(",") : "";
+  return `${faixa.tipo}|${faixa.forcada ? 1 : 0}|${faixa.motivo ?? ""}|${(faixa.marcas || []).join(",")}|${faixa.tinta ?? ""}|${braille}`;
+}
+
+// Devolve, para cada faixa, o elemento desenhado (null para as linhas de código ocultas).
+// Com o desenho anterior, só troca as faixas do meio que mudaram (o começo e o fim iguais
+// ficam onde estão), para digitar num livro grande não recriar a página inteira.
+function desenharPareada(raiz, faixas, colunas, anterior = null) {
   raiz.style.setProperty("--colunas", String(colunas));
+  const novas = faixas.map(assinatura);
+  const criar = (indice) => {
+    if (novas[indice] == null) return null;
+    const elemento = linhaDaFaixa(faixas[indice]);
+    elemento.dataset.i = String(indice);
+    return elemento;
+  };
+
+  if (!anterior || anterior.colunas !== colunas || !anterior.assinaturas) {
+    const fragmento = document.createDocumentFragment();
+    const elementos = faixas.map((_, indice) => {
+      const elemento = criar(indice);
+      if (elemento) fragmento.append(elemento);
+      return elemento;
+    });
+    raiz.replaceChildren(fragmento);
+    return { elementos, assinaturas: novas, colunas };
+  }
+
+  const velhas = anterior.assinaturas;
+  let inicio = 0;
+  while (inicio < novas.length && inicio < velhas.length && novas[inicio] === velhas[inicio]) inicio += 1;
+  let fimNovo = novas.length - 1;
+  let fimVelho = velhas.length - 1;
+  while (fimNovo >= inicio && fimVelho >= inicio && novas[fimNovo] === velhas[fimVelho]) {
+    fimNovo -= 1;
+    fimVelho -= 1;
+  }
+  // Âncora: o primeiro elemento que fica, depois do trecho trocado.
+  let ancora = null;
+  for (let i = fimVelho + 1; i < velhas.length && !ancora; i += 1) ancora = anterior.elementos[i];
+  for (let i = inicio; i <= fimVelho; i += 1) anterior.elementos[i]?.remove();
   const fragmento = document.createDocumentFragment();
-  for (const faixa of faixas) {
-    if (faixa.tipo === "comando" || faixa.tipo === "oculta") continue;
-    fragmento.append(linhaDaFaixa(faixa));
+  const meio = [];
+  for (let i = inicio; i <= fimNovo; i += 1) {
+    const elemento = criar(i);
+    if (elemento) fragmento.append(elemento);
+    meio.push(elemento);
   }
-  raiz.replaceChildren(fragmento);
+  raiz.insertBefore(fragmento, ancora);
+  const elementos = [
+    ...anterior.elementos.slice(0, inicio),
+    ...meio,
+    ...anterior.elementos.slice(fimVelho + 1),
+  ];
+  // Os índices das faixas depois do trecho mudaram de número.
+  for (let i = fimNovo + 1; i < elementos.length; i += 1) if (elementos[i]) elementos[i].dataset.i = String(i);
+  return { elementos, assinaturas: novas, colunas };
 }
 
-// Destaca as faixas da linha do texto em que está o cursor.
-function marcarAtual(raiz, linha) {
-  for (const anterior of raiz.querySelectorAll(".faixa.atual")) anterior.classList.remove("atual");
-  let primeira = null;
-  for (const faixa of raiz.children) {
-    const de = faixa.dataset.de ?? faixa.dataset.linha;
-    const ate = faixa.dataset.ate ?? faixa.dataset.linha;
-    if (de == null) continue;
-    if (Number(de) <= linha && linha <= Number(ate)) {
-      faixa.classList.add("atual");
-      primeira ??= faixa;
-    }
-  }
-  return primeira;
-}
-
-export { desenharPareada, marcarAtual };
+export { desenharPareada };

@@ -1,8 +1,17 @@
 import { tabelas } from "./tabelas.js";
 import { classificar, preparar, resumo } from "./comandos.js?edicao=26";
-import { formatar } from "./pagina.js?edicao=27";
-import { montarFaixas } from "./faixas.js?edicao=27";
-import { desenharPareada, marcarAtual } from "./pareada.js?edicao=27";
+import { formatar } from "./pagina.js?edicao=30";
+import { montarFaixas } from "./faixas.js?edicao=28";
+import { desenharPareada } from "./pareada.js?edicao=30";
+import {
+  apagarNaBorda,
+  editavel,
+  foraDeLinhaEscondida,
+  indiceDaPosicao,
+  iniciosDasLinhas,
+  posicaoNaFaixa,
+  vizinhaEditavel,
+} from "./cursor_pareado.js?edicao=29";
 import { caractereMeta, metaDePontos, nomesPontos, traduzir, unicodeDaCela } from "./motor.js?edicao=26";
 import {
   apararFim,
@@ -397,6 +406,8 @@ function rolarTextoPelaVista() {
 
 function desenhar() {
   estado.formatoSujo = true;
+  pareado.sujo = true;
+  pareado.sujoTotal = true;
   atualizarStatus();
   if (pareadoLigado()) desenharModoPareado();
   else desenharVista();
@@ -408,21 +419,211 @@ function pareadoLigado() {
   return $("pareado").checked;
 }
 
+// ---------- Editor pareado (PLANO-EDITOR, etapas 2 e 3) ----------
+// O textarea continua sendo o modelo e recebe o teclado (acentos, colar, desfazer), mas fica
+// invisível; o que a pessoa vê e clica são as faixas. O cursor é a posição no textarea.
+const pareado = {
+  texto: null,
+  sujo: true,
+  faixas: [],
+  elementos: [],
+  desenho: null,
+  sujoTotal: true,
+  inicios: [0],
+  colunaAlvo: null,
+  ultimoIndice: 0,
+  cursor: null,
+  medidas: null,
+};
+
 function desenharModoPareado(seguir = true) {
   sincronizarModo();
+  const area = $("texto");
+  if (pareado.sujo || pareado.texto !== area.value) reconstruirPareado();
+  posicionarCursorPareado(seguir);
+}
+
+function reconstruirPareado() {
+  const area = $("texto");
   const linhas = linhasDoTexto();
   const op = opcoes();
   const formato = formatar(linhas, op, false);
   const raiz = $("pareada");
-  desenharPareada(raiz, montarFaixas(linhas, formato, op), formato.colunas);
+  const rolagem = raiz.scrollTop;
+  pareado.faixas = montarFaixas(linhas, formato, op);
+  pareado.desenho = desenharPareada(raiz, pareado.faixas, formato.colunas, pareado.sujoTotal ? null : pareado.desenho);
+  pareado.elementos = pareado.desenho.elementos;
+  pareado.sujoTotal = false;
+  pareado.texto = area.value;
+  pareado.inicios = iniciosDasLinhas(area.value);
+  pareado.sujo = false;
+  raiz.scrollTop = rolagem;
   $("painel-titulo").textContent = `Pareado · ${formato.colunas}×${formato.altura} · ${formato.paginas} páginas`;
-  marcarCursorPareado(seguir);
 }
 
-function marcarCursorPareado(seguir) {
+function posicaoPareada(indice) {
+  return posicaoNaFaixa(pareado.faixas, pareado.inicios, indice);
+}
+
+function indiceDoCursor() {
+  const area = $("texto");
+  return area.selectionDirection === "backward" ? area.selectionStart : area.selectionEnd;
+}
+
+function irParaIndice(indice, estender = false) {
+  const area = $("texto");
+  if (estender) {
+    const ancora = area.selectionDirection === "backward" ? area.selectionEnd : area.selectionStart;
+    if (indice < ancora) area.setSelectionRange(indice, ancora, "backward");
+    else area.setSelectionRange(ancora, indice, "forward");
+  } else area.setSelectionRange(indice, indice);
+  pareado.ultimoIndice = indice;
+}
+
+function posicionarCursorPareado(seguir) {
   const raiz = $("pareada");
-  const primeira = marcarAtual(raiz, posicao().linha);
-  if (seguir && primeira) raiz.scrollTop = Math.max(0, primeira.offsetTop - raiz.clientHeight / 3);
+  const posicao = posicaoPareada(indiceDoCursor());
+  let elemento = pareado.elementos[posicao.faixa];
+  if (!elemento) {
+    const vizinha = vizinhaEditavel(pareado.faixas, posicao.faixa, 1) ?? vizinhaEditavel(pareado.faixas, posicao.faixa, -1);
+    elemento = vizinha != null ? pareado.elementos[vizinha] : null;
+  }
+  for (const anterior of raiz.querySelectorAll(".faixa.atual")) anterior.classList.remove("atual");
+  if (!pareado.cursor) {
+    pareado.cursor = document.createElement("span");
+    pareado.cursor.className = "cursor-pareado";
+  }
+  if (!elemento) return;
+  elemento.classList.add("atual");
+  elemento.querySelector(".lado-tinta").append(pareado.cursor);
+  pareado.cursor.style.setProperty("--coluna", String(posicao.coluna));
+  // Reinicia a piscada para o cursor ficar visível logo depois de cada movimento.
+  pareado.cursor.classList.remove("piscando");
+  void pareado.cursor.offsetWidth;
+  pareado.cursor.classList.add("piscando");
+  if (seguir) {
+    const topo = elemento.offsetTop;
+    const margem = elemento.offsetHeight * 2;
+    if (topo < raiz.scrollTop + margem) raiz.scrollTop = Math.max(0, topo - margem);
+    else if (topo + elemento.offsetHeight > raiz.scrollTop + raiz.clientHeight - margem) {
+      raiz.scrollTop = topo + elemento.offsetHeight - raiz.clientHeight + margem;
+    }
+  }
+}
+
+function medidasPareadas(elemento) {
+  if (pareado.medidas) return pareado.medidas;
+  const regua = (alvo, texto) => {
+    const span = document.createElement("span");
+    span.textContent = texto;
+    span.style.cssText = "position:absolute;visibility:hidden;white-space:pre";
+    alvo.append(span);
+    const largura = span.getBoundingClientRect().width / texto.length;
+    span.remove();
+    return largura;
+  };
+  pareado.medidas = {
+    tinta: regua(elemento.querySelector(".lado-tinta"), "0".repeat(20)),
+    braille: regua(elemento.querySelector(".lado-braille"), "⠿".repeat(20)),
+  };
+  return pareado.medidas;
+}
+
+// Clique: na tinta pela coluna; no braille pela cela, que sabe de que letra veio.
+function indiceDoClique(evento) {
+  const linha = evento.target.closest(".faixa");
+  if (!linha || linha.dataset.i == null) return null;
+  const indice = Number(linha.dataset.i);
+  const faixa = pareado.faixas[indice];
+  if (!editavel(faixa)) {
+    const vizinha = vizinhaEditavel(pareado.faixas, indice, 1) ?? vizinhaEditavel(pareado.faixas, indice, -1);
+    if (vizinha == null) return null;
+    return indiceDaPosicao(pareado.faixas, pareado.inicios, pareado.texto, { faixa: vizinha, coluna: 0 });
+  }
+  const medidas = medidasPareadas(linha);
+  const ladoBraille = linha.querySelector(".lado-braille");
+  const caixaBraille = ladoBraille.getBoundingClientRect();
+  if (evento.clientX >= caixaBraille.left) {
+    const recuo = parseFloat(getComputedStyle(ladoBraille).paddingLeft) || 0;
+    const cela = Math.max(0, Math.floor((evento.clientX - caixaBraille.left - recuo) / medidas.braille));
+    const alvo = faixa.braille?.[cela];
+    if (alvo?.fonte) return pareado.inicios[alvo.fonte.linha] + alvo.fonte.de;
+    return indiceDaPosicao(pareado.faixas, pareado.inicios, pareado.texto, { faixa: indice, coluna: cela });
+  }
+  const ladoTinta = linha.querySelector(".lado-tinta");
+  const caixa = ladoTinta.getBoundingClientRect();
+  const recuo = parseFloat(getComputedStyle(ladoTinta).paddingLeft) || 0;
+  const coluna = Math.max(0, Math.round((evento.clientX - caixa.left - recuo) / medidas.tinta));
+  return indiceDaPosicao(pareado.faixas, pareado.inicios, pareado.texto, { faixa: indice, coluna });
+}
+
+function teclaPareada(evento) {
+  if (!pareadoLigado()) return;
+  const area = $("texto");
+  if (pareado.sujo || pareado.texto !== area.value) reconstruirPareado();
+  const vertical = evento.key === "ArrowUp" || evento.key === "ArrowDown";
+  if (!vertical) pareado.colunaAlvo = null;
+  if (evento.ctrlKey || evento.altKey || evento.metaKey) return;
+
+  if (vertical || evento.key === "PageUp" || evento.key === "PageDown") {
+    evento.preventDefault();
+    const atual = posicaoPareada(indiceDoCursor());
+    const alvo = pareado.colunaAlvo ?? atual.coluna;
+    const passo = evento.key === "ArrowUp" || evento.key === "PageUp" ? -1 : 1;
+    const vezes = vertical ? 1 : Math.max(1, Math.floor($("pareada").clientHeight / 30) - 2);
+    let destino = atual.faixa;
+    for (let i = 0; i < vezes; i += 1) {
+      const proxima = vizinhaEditavel(pareado.faixas, destino, passo);
+      if (proxima == null) break;
+      destino = proxima;
+    }
+    if (destino === atual.faixa) return;
+    pareado.colunaAlvo = alvo;
+    irParaIndice(indiceDaPosicao(pareado.faixas, pareado.inicios, pareado.texto, { faixa: destino, coluna: alvo }), evento.shiftKey);
+    atualizarStatus();
+    posicionarCursorPareado(true);
+    return;
+  }
+
+  if (evento.key === "Home" || evento.key === "End") {
+    evento.preventDefault();
+    const atual = posicaoPareada(indiceDoCursor());
+    const faixa = pareado.faixas[atual.faixa];
+    const coluna = evento.key === "Home" ? 0 : (faixa.tinta || "").length;
+    irParaIndice(indiceDaPosicao(pareado.faixas, pareado.inicios, pareado.texto, { faixa: atual.faixa, coluna }), evento.shiftKey);
+    atualizarStatus();
+    posicionarCursorPareado(true);
+    return;
+  }
+
+  if ((evento.key === "Backspace" || evento.key === "Delete") && area.selectionStart === area.selectionEnd) {
+    const passo = evento.key === "Backspace" ? -1 : 1;
+    const apagar = apagarNaBorda(pareado.faixas, pareado.inicios, pareado.texto, area.selectionStart, passo);
+    if (!apagar) return;
+    evento.preventDefault();
+    if (apagar.de === apagar.ate) return;
+    // execCommand mantém o Ctrl+Z do textarea.
+    area.setSelectionRange(apagar.de, apagar.ate);
+    if (!document.execCommand("delete")) {
+      area.setRangeText("", apagar.de, apagar.ate, "end");
+      area.dispatchEvent(new Event("input", { bubbles: true }));
+    }
+  }
+}
+
+// Depois de um movimento nativo (setas, digitação): tira o cursor das linhas de código.
+function aposMovimentoPareado() {
+  if (!pareadoLigado()) return;
+  const area = $("texto");
+  if (pareado.sujo || pareado.texto !== area.value) reconstruirPareado();
+  if (area.selectionStart === area.selectionEnd) {
+    const indice = area.selectionStart;
+    const direcao = Math.sign(indice - pareado.ultimoIndice) || 1;
+    const fora = foraDeLinhaEscondida(pareado.faixas, pareado.inicios, pareado.texto, indice, direcao);
+    if (fora !== indice) area.setSelectionRange(fora, fora);
+    pareado.ultimoIndice = fora;
+  }
+  posicionarCursorPareado(true);
 }
 
 function sincronizarModo() {
@@ -459,6 +660,8 @@ function desenharCinco() {
 
 function agendar() {
   window.clearTimeout(estado.timer);
+  // No modo pareado quem redesenha depois de digitar é aposMovimentoPareado.
+  if (pareadoLigado()) return;
   estado.timer = window.setTimeout(() => desenhar(false), 60);
 }
 
@@ -1183,6 +1386,28 @@ for (const evento of ["keyup", "click", "select"]) {
 $("pareado").addEventListener("change", () => {
   aplicarModoPareado();
   persistir();
+  if (pareadoLigado()) {
+    pareado.ultimoIndice = indiceDoCursor();
+    aposMovimentoPareado();
+    $("texto").focus({ preventScroll: true });
+  }
+});
+$("texto").addEventListener("keydown", teclaPareada);
+for (const evento of ["keyup", "input"]) {
+  $("texto").addEventListener(evento, () => {
+    if (pareadoLigado()) window.requestAnimationFrame(aposMovimentoPareado);
+  });
+}
+$("pareada").addEventListener("mousedown", (evento) => {
+  if (evento.button !== 0) return;
+  const indice = indiceDoClique(evento);
+  evento.preventDefault();
+  $("texto").focus({ preventScroll: true });
+  if (indice == null) return;
+  pareado.colunaAlvo = null;
+  irParaIndice(indice, evento.shiftKey);
+  atualizarStatus();
+  posicionarCursorPareado(false);
 });
 $("tinta").addEventListener("change", () => {
   desenhar();

@@ -415,8 +415,24 @@ function cabecalho(pagina, numero, opcoes, cache) {
   return [...margem, ...corpo].slice(0, pagina.colunas);
 }
 
+// A tradução de um trecho só depende do texto e das opções de tradução. O cache sobrevive entre
+// uma formatação e a próxima, então digitar só retraduz a linha alterada.
+const CACHES = new Map();
+function cacheDaTraducao(opcoes) {
+  const chave = JSON.stringify([
+    opcoes.codigo, opcoes.matematica, opcoes.maiuscula, opcoes.maiusculaPalavra, opcoes.numero, opcoes.correcoes ?? null,
+  ]);
+  let cache = CACHES.get(chave);
+  if (!cache || cache.size > 200000) {
+    if (CACHES.size > 8) CACHES.clear();
+    cache = new Map();
+    CACHES.set(chave, cache);
+  }
+  return cache;
+}
+
 function formatar(linhas, opcoes, tinta) {
-  const cache = new Map();
+  const cache = cacheDaTraducao(opcoes);
   const avisos = [];
   const segmentos = montarSegmentos(linhas, opcoes, avisos);
   const paginas = [];
