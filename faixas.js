@@ -235,4 +235,4 @@ function montarFaixas(linhas, formato, opcoes = {}) {
   return resultado;
 }
 
-export { montarFaixas, cabecalhoTinta, marcasDe };
+export { montarFaixas, cabecalhoTinta, marcasDe, marcasPorLinha };

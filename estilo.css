@@ -415,3 +415,16 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--destaque); }
 .sel-tinta { left: calc(6px + var(--de) * 1ch); width: calc(var(--n) * 1ch); }
 .sel-braille { left: calc(14px + var(--de) * var(--cela, 22px)); width: calc(var(--n) * var(--cela, 22px)); }
 .pareada.com-selecao .cursor-pareado { opacity: 0.6; }
+
+/* Relatório da Tinta no Word */
+#tinta-dialogo { max-width: 760px; width: 90vw; }
+#tinta-relatorio {
+  max-height: 50vh;
+  overflow: auto;
+  margin: 0;
+  padding: 8px;
+  border: 1px solid var(--borda-forte);
+  border-radius: 3px;
+  font-size: 12px;
+  white-space: pre-wrap;
+}

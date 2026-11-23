@@ -2,7 +2,9 @@ import { tabelas } from "./tabelas.js";
 import { classificar, preparar, resumo } from "./comandos.js?edicao=26";
 import { formatar } from "./pagina.js?edicao=32";
 import { contarQuebras, finalizarTexto, mesmoBraille, removerQuebras } from "./finalizar.js?edicao=1";
-import { montarFaixas } from "./faixas.js?edicao=30";
+import { montarFaixas } from "./faixas.js?edicao=31";
+import { montarTinta, relatorioTinta } from "./tinta.js?edicao=1";
+import { conferirDocx, gerarDocx } from "./docx.js?edicao=1";
 import { criarJanela } from "./pareada.js?edicao=35";
 import {
   apagarNaBorda,
@@ -941,6 +943,27 @@ function exportarWord(tinta) {
   baixar(tinta ? "tinta.doc" : "braille.doc", html, "application/msword");
 }
 
+// Tinta no Word: a versão em fonte ampliada, linha a linha igual ao braille. A tinta sai do
+// texto (tinta.js), não do braille; o .docx é gravado direto e lido de volta para conferir.
+function exportarTinta() {
+  const tinta = montarTinta(linhasDoTexto(), opcoes());
+  const bytes = gerarDocx(tinta);
+  const conferencia = conferirDocx(bytes, tinta);
+  const base = (estado.nome || "sem título").replace(/\.[^.]*$/, "");
+  baixar(`${base} - tinta.docx`, bytes, "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+  const relatorio = relatorioTinta(tinta, conferencia);
+  const erros = tinta.avisos.filter((aviso) => aviso.gravidade === "erro").length;
+  const avisos = tinta.avisos.filter((aviso) => aviso.gravidade === "aviso").length;
+  $("tinta-resumo").textContent = !conferencia.ok
+    ? "O arquivo foi gravado, mas a conferência falhou. Veja o relatório antes de usar."
+    : erros || avisos
+      ? `Arquivo gravado. Confira ${erros ? `${erros} erro(s) e ` : ""}${avisos} aviso(s) abaixo.`
+      : "Arquivo gravado. Tudo conferido: nenhuma pendência.";
+  $("tinta-relatorio").textContent = relatorio;
+  $("tinta-dialogo").dataset.base = base;
+  $("tinta-dialogo").showModal();
+}
+
 // Imprimir: o texto do .txt, ou o braille do livro inteiro com uma página braille por folha.
 // A área de impressão só existe enquanto a janela de impressão está aberta.
 function imprimir(tipo) {
@@ -1156,7 +1179,7 @@ function acao(nome) {
   } else if (nome === "imprimir-texto" || nome === "imprimir-braille") {
     imprimir(nome === "imprimir-texto" ? "texto" : "braille");
   } else if (nome === "braille-word") exportarWord(false);
-  else if (nome === "tinta-word") exportarWord(true);
+  else if (nome === "tinta-word") exportarTinta();
   else if (nome === "salvar-config") {
     const dados = JSON.parse(localStorage.getItem(CHAVE) || "{}");
     delete dados.texto;
@@ -1499,6 +1522,10 @@ $("config-fechar").addEventListener("click", () => {
 });
 $("cinco-linhas").addEventListener("change", desenharCinco);
 $("aviso-fechar").addEventListener("click", () => $("aviso").close());
+$("tinta-fechar").addEventListener("click", () => $("tinta-dialogo").close());
+$("tinta-salvar-relatorio").addEventListener("click", () => {
+  baixar(`${$("tinta-dialogo").dataset.base} - relatório da tinta.txt`, $("tinta-relatorio").textContent, "text/plain;charset=utf-8");
+});
 $("remover-quebras-cancela").addEventListener("click", () => $("remover-quebras-dialogo").close());
 $("remover-quebras-ok").addEventListener("click", () => {
   $("remover-quebras-dialogo").close();
