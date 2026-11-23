@@ -517,6 +517,8 @@ function pintarSelecaoPareada() {
 }
 
 function posicionarCursorPareado(seguir) {
+  sincronia.de = $("texto").selectionStart;
+  sincronia.ate = $("texto").selectionEnd;
   pintarSelecaoPareada();
   const raiz = $("pareada");
   const posicao = posicaoPareada(indiceDoCursor());
@@ -608,7 +610,8 @@ function teclaPareada(evento) {
     const atual = posicaoPareada(indiceDoCursor());
     const alvo = pareado.colunaAlvo ?? atual.coluna;
     const passo = evento.key === "ArrowUp" || evento.key === "PageUp" ? -1 : 1;
-    const vezes = vertical ? 1 : Math.max(1, Math.floor($("pareada").clientHeight / 30) - 2);
+    const alturaFaixa = pareado.elementos.find(Boolean)?.offsetHeight || 30;
+    const vezes = vertical ? 1 : Math.max(1, Math.floor($("pareada").clientHeight / alturaFaixa) - 2);
     let destino = atual.faixa;
     for (let i = 0; i < vezes; i += 1) {
       const proxima = vizinhaEditavel(pareado.faixas, destino, passo);
@@ -647,6 +650,21 @@ function teclaPareada(evento) {
       area.dispatchEvent(new Event("input", { bubbles: true }));
     }
   }
+}
+
+// Qualquer ação (menu, diálogo, Perkins, busca, colar...) mexe só no textarea. Depois de cada
+// clique, tecla, mudança ou diálogo fechado, o pareado confere se o texto ou a seleção mudou.
+const sincronia = { de: -1, ate: -1, quadro: 0 };
+
+function sincronizarPareado() {
+  if (!pareadoLigado() || sincronia.quadro) return;
+  sincronia.quadro = window.requestAnimationFrame(() => {
+    sincronia.quadro = 0;
+    const area = $("texto");
+    const mudouTexto = pareado.sujo || pareado.texto !== area.value;
+    const mudouSelecao = area.selectionStart !== sincronia.de || area.selectionEnd !== sincronia.ate;
+    if (mudouTexto || mudouSelecao) aposMovimentoPareado();
+  });
 }
 
 // Depois de um movimento nativo (setas, digitação): tira o cursor das linhas de código.
@@ -759,6 +777,8 @@ function aplicarFonte(tamanho) {
   const px = Math.min(48, Math.max(12, Number(tamanho) || 22));
   estado.fonte = px;
   $("texto").style.fontSize = `${px}px`;
+  $("pareada").style.setProperty("--fonte", `${px}px`);
+  pareado.medidas = null;
 }
 
 function restaurar() {
@@ -808,6 +828,12 @@ function irPara(linha, coluna) {
   const area = $("texto");
   area.focus({ preventScroll: true });
   area.setSelectionRange(pos, pos);
+  if (pareadoLigado()) {
+    pareado.ultimoIndice = pos;
+    atualizarStatus();
+    aposMovimentoPareado();
+    return;
+  }
   rolarTextoPelaVista();
   atualizarStatus();
   const topos = geometriaDoTexto();
@@ -1195,6 +1221,7 @@ function acao(nome) {
     const ligado = !$("texto").readOnly;
     $("texto").readOnly = ligado;
     $("texto").classList.toggle("revisor", ligado);
+    $("pareada").classList.toggle("revisor", ligado);
     $("st-revisor").textContent = ligado ? "Modo de revisão - apenas leitura" : "";
   } else if (nome === "atualizar" || nome === "visualizar") desenhar(true);
   else if (nome === "simbolos") {
@@ -1233,9 +1260,19 @@ function acao(nome) {
     area.focus();
     area.setSelectionRange(onde, fecha < 0 ? onde + 4 : fecha + 4);
   } else if (nome === "imprimir-texto" || nome === "imprimir-braille") {
+    // A impressão usa o editor e a vista de sempre; window.print() bloqueia até fechar.
+    const eraPareado = pareadoLigado();
+    if (eraPareado) {
+      $("pareado").checked = false;
+      aplicarModoPareado();
+    }
     document.body.dataset.impressao = nome === "imprimir-texto" ? "texto" : "braille";
     window.print();
     document.body.dataset.impressao = "";
+    if (eraPareado) {
+      $("pareado").checked = true;
+      aplicarModoPareado();
+    }
   } else if (nome === "braille-word") exportarWord(false);
   else if (nome === "tinta-word") exportarWord(true);
   else if (nome === "salvar-config") {
@@ -1431,6 +1468,17 @@ $("pareado").addEventListener("change", () => {
   }
 });
 $("texto").addEventListener("keydown", teclaPareada);
+for (const evento of ["click", "keyup", "change", "input"]) document.addEventListener(evento, sincronizarPareado);
+document.addEventListener("close", sincronizarPareado, true);
+// O Chrome zera a seleção do textarea ao fechar um diálogo e devolver o foco a ele, quando o
+// texto mudou com o diálogo aberto (Perkins, símbolos...). Guarda a seleção e devolve.
+const fecharDialogo = HTMLDialogElement.prototype.close;
+HTMLDialogElement.prototype.close = function fecharGuardandoSelecao(...argumentos) {
+  const area = $("texto");
+  const { selectionStart: de, selectionEnd: ate, selectionDirection: sentido } = area;
+  fecharDialogo.apply(this, argumentos);
+  if (area.selectionStart !== de || area.selectionEnd !== ate) area.setSelectionRange(de, ate, sentido);
+};
 for (const evento of ["keyup", "input"]) {
   $("texto").addEventListener(evento, () => {
     if (pareadoLigado()) window.requestAnimationFrame(aposMovimentoPareado);

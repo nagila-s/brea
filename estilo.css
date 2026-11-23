@@ -389,14 +389,17 @@ body.modo-pareado .painel { grid-column: 1 / -1; border-left: 0; }
   flex: 1;
   overflow: auto;
   padding: 12px 16px 40vh;
-  --altura-faixa: 30px;
+  /* Segue a fonte escolhida em Configurar > Fonte na tela (padrão 22). */
+  --fonte: 22px;
+  --altura-faixa: calc(var(--fonte) * 1.36);
 }
+.pareada.revisor { background: #ece4c4; }
 
 .faixa {
   display: grid;
   /* 1ch medido na fonte da tinta (Consolas 20px): a coluna cabe a largura braille inteira. */
   font-family: Consolas, "Cascadia Mono", monospace;
-  font-size: 20px;
+  font-size: calc(var(--fonte) * 0.91);
   grid-template-columns: 22px calc(var(--colunas, 34) * 1ch + 24px) auto;
   align-items: center;
   height: var(--altura-faixa);
@@ -413,7 +416,7 @@ body.modo-pareado .painel { grid-column: 1 / -1; border-left: 0; }
 
 .lado-braille {
   font-family: "Segoe UI Symbol", "Segoe UI", sans-serif;
-  font-size: 22px;
+  font-size: var(--fonte);
   padding-left: 14px;
   border-left: 1px solid var(--papel-borda);
   align-self: stretch;
@@ -470,7 +473,7 @@ body.modo-pareado .painel { grid-column: 1 / -1; border-left: 0; }
 .faixa.atual .lado-tinta, .faixa.atual .lado-braille { box-shadow: none; background-image: linear-gradient(var(--papel-destaque), var(--papel-destaque)); }
 
 /* Livro grande: o navegador só calcula o layout das faixas perto da tela. */
-.pareada > .faixa { content-visibility: auto; contain-intrinsic-size: auto 30px; }
+.pareada > .faixa { content-visibility: auto; contain-intrinsic-size: auto var(--altura-faixa); }
 .pareada > .faixa-quebra { contain-intrinsic-size: auto 22px; }
 
 /* Seleção no modo pareado: amarelo atrás da tinta e das celas correspondentes. */
