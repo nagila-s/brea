@@ -149,8 +149,106 @@ function apagarNaBorda(faixas, inicios, texto, indice, passo) {
   return { de: indice, ate: indice };
 }
 
+// Trecho do texto que a faixa cobre: { ini, fim } em índices do texto, ou null.
+function alcanceDaFaixa(faixa, inicios, texto) {
+  if (faixa.trechos?.length) {
+    const primeiro = faixa.trechos[0];
+    const ultimo = faixa.trechos[faixa.trechos.length - 1];
+    return { ini: inicios[primeiro.linha] + primeiro.de, fim: inicios[ultimo.linha] + ultimo.ate };
+  }
+  if (faixa.linha != null && editavel(faixa)) {
+    const ini = inicios[faixa.linha];
+    const fim = (inicios[faixa.linha + 1] ?? texto.length + 1) - 1;
+    return { ini, fim };
+  }
+  return null;
+}
+
+// O que pintar numa faixa para a seleção [de, ate): colunas da tinta e celas do braille,
+// cada uma como [início, fim). Os espaços que juntam linhas e o hífen do corte entram quando a
+// seleção passa por eles. Devolve null quando a faixa fica de fora.
+function selecaoNaFaixa(faixa, inicios, texto, de, ate) {
+  if (de >= ate) return null;
+  const alcance = alcanceDaFaixa(faixa, inicios, texto);
+  if (!alcance) return null;
+  const continuaAntes = de < alcance.ini;
+  const continuaDepois = ate > alcance.fim;
+  if (ate <= alcance.ini && !(ate === alcance.ini && continuaAntes && alcance.ini === alcance.fim)) return null;
+  if (de > alcance.fim || (de === alcance.fim && alcance.fim > alcance.ini)) return null;
+
+  const largura = (faixa.tinta || "").length;
+  if (!faixa.trechos?.length) {
+    // Linha em branco ou comentário: pelas colunas da própria linha.
+    const c0 = Math.max(0, de - alcance.ini);
+    const c1 = continuaDepois ? Math.max(largura, 1) : Math.min(largura, ate - alcance.ini);
+    const celas = faixa.braille?.length ? [0, faixa.braille.length] : null;
+    return { tinta: [c0, Math.max(c0 + (continuaDepois && largura === 0 ? 1 : 0), c1)], braille: celas };
+  }
+
+  let c0 = null;
+  let c1 = null;
+  for (const trecho of faixa.trechos) {
+    const ini = inicios[trecho.linha] + trecho.de;
+    const fim = inicios[trecho.linha] + trecho.ate;
+    const a = Math.max(de, ini);
+    const b = Math.min(ate, fim);
+    if (a >= b) continue;
+    const ca = trecho.coluna + (a - ini);
+    const cb = trecho.coluna + (b - ini);
+    c0 = c0 == null ? ca : Math.min(c0, ca);
+    c1 = c1 == null ? cb : Math.max(c1, cb);
+  }
+  if (c0 == null) {
+    // A seleção só passa pelo espaço descartado entre duas faixas.
+    if (!continuaAntes || !continuaDepois) return null;
+    c0 = faixa.trechos[0].coluna;
+    c1 = c0;
+  }
+  if (continuaAntes) c0 = Math.min(c0, faixa.trechos[0].coluna);
+  if (continuaDepois) c1 = largura;
+
+  let k0 = null;
+  let k1 = null;
+  (faixa.braille || []).forEach((cela, k) => {
+    if (!cela.fonte) return;
+    const ini = inicios[cela.fonte.linha] + cela.fonte.de;
+    const fim = Math.max(ini + 1, inicios[cela.fonte.linha] + cela.fonte.ate);
+    if (Math.max(de, ini) >= Math.min(ate, fim)) return;
+    if (k0 == null) k0 = k;
+    k1 = k + 1;
+  });
+  const celas = faixa.braille || [];
+  if (continuaAntes && k0 != null) {
+    while (k0 > 0 && !celas[k0 - 1].fonte && celas[k0 - 1].tipo !== "espaco") k0 -= 1;
+  }
+  if (continuaDepois) k1 = celas.length;
+  if (k0 == null && continuaDepois) {
+    k0 = celas.findIndex((cela) => cela.fonte);
+    if (k0 < 0) k0 = 0;
+  }
+  return { tinta: [c0, c1], braille: k0 == null ? null : [k0, k1] };
+}
+
+// Palavra em volta do índice (duplo clique): letras, dígitos e hífen interno.
+function palavraEm(texto, indice) {
+  const letra = /[\p{L}\p{N}_]/u;
+  let de = indice;
+  let ate = indice;
+  if (!letra.test(texto[ate] ?? "") && letra.test(texto[ate - 1] ?? "")) {
+    de -= 1;
+    ate -= 1;
+  }
+  if (!letra.test(texto[ate] ?? "")) return { de: indice, ate: Math.min(texto.length, indice + 1) };
+  while (de > 0 && letra.test(texto[de - 1])) de -= 1;
+  while (ate < texto.length && letra.test(texto[ate])) ate += 1;
+  return { de, ate };
+}
+
 export {
+  alcanceDaFaixa,
   apagarNaBorda,
+  palavraEm,
+  selecaoNaFaixa,
   editavel,
   foraDeLinhaEscondida,
   indiceDaPosicao,

@@ -6,12 +6,14 @@ import { desenharPareada } from "./pareada.js?edicao=30";
 import {
   apagarNaBorda,
   editavel,
+  palavraEm,
+  selecaoNaFaixa,
   foraDeLinhaEscondida,
   indiceDaPosicao,
   iniciosDasLinhas,
   posicaoNaFaixa,
   vizinhaEditavel,
-} from "./cursor_pareado.js?edicao=29";
+} from "./cursor_pareado.js?edicao=30";
 import { caractereMeta, metaDePontos, nomesPontos, traduzir, unicodeDaCela } from "./motor.js?edicao=26";
 import {
   apararFim,
@@ -480,7 +482,42 @@ function irParaIndice(indice, estender = false) {
   pareado.ultimoIndice = indice;
 }
 
+// Pinta a seleção do textarea nas faixas: na tinta por colunas, no braille por celas.
+function pintarSelecaoPareada() {
+  const raiz = $("pareada");
+  for (const velha of raiz.querySelectorAll(".selecao-pareada")) velha.remove();
+  const area = $("texto");
+  const de = area.selectionStart;
+  const ate = area.selectionEnd;
+  raiz.classList.toggle("com-selecao", de < ate);
+  if (de >= ate) return;
+  const primeiro = pareado.elementos.find(Boolean);
+  if (primeiro) {
+    const medidas = medidasPareadas(primeiro);
+    raiz.style.setProperty("--cela", `${medidas.braille}px`);
+  }
+  pareado.faixas.forEach((faixa, indice) => {
+    const elemento = pareado.elementos[indice];
+    if (!elemento) return;
+    const selecao = selecaoNaFaixa(faixa, pareado.inicios, pareado.texto, de, ate);
+    if (!selecao) return;
+    const tinta = document.createElement("span");
+    tinta.className = "selecao-pareada sel-tinta";
+    tinta.style.setProperty("--de", String(selecao.tinta[0]));
+    tinta.style.setProperty("--n", String(Math.max(0.5, selecao.tinta[1] - selecao.tinta[0])));
+    elemento.querySelector(".lado-tinta").append(tinta);
+    if (selecao.braille) {
+      const braille = document.createElement("span");
+      braille.className = "selecao-pareada sel-braille";
+      braille.style.setProperty("--de", String(selecao.braille[0]));
+      braille.style.setProperty("--n", String(selecao.braille[1] - selecao.braille[0]));
+      elemento.querySelector(".lado-braille").append(braille);
+    }
+  });
+}
+
 function posicionarCursorPareado(seguir) {
+  pintarSelecaoPareada();
   const raiz = $("pareada");
   const posicao = posicaoPareada(indiceDoCursor());
   let elemento = pareado.elementos[posicao.faixa];
@@ -530,7 +567,7 @@ function medidasPareadas(elemento) {
 }
 
 // Clique: na tinta pela coluna; no braille pela cela, que sabe de que letra veio.
-function indiceDoClique(evento) {
+function indiceDoClique(evento, sobLetra = false) {
   const linha = evento.target.closest(".faixa");
   if (!linha || linha.dataset.i == null) return null;
   const indice = Number(linha.dataset.i);
@@ -553,7 +590,8 @@ function indiceDoClique(evento) {
   const ladoTinta = linha.querySelector(".lado-tinta");
   const caixa = ladoTinta.getBoundingClientRect();
   const recuo = parseFloat(getComputedStyle(ladoTinta).paddingLeft) || 0;
-  const coluna = Math.max(0, Math.round((evento.clientX - caixa.left - recuo) / medidas.tinta));
+  const exata = (evento.clientX - caixa.left - recuo) / medidas.tinta;
+  const coluna = Math.max(0, sobLetra ? Math.floor(exata) : Math.round(exata));
   return indiceDaPosicao(pareado.faixas, pareado.inicios, pareado.texto, { faixa: indice, coluna });
 }
 
@@ -1398,6 +1436,38 @@ for (const evento of ["keyup", "input"]) {
     if (pareadoLigado()) window.requestAnimationFrame(aposMovimentoPareado);
   });
 }
+// Mouse: clique posiciona, Shift+clique estende, arrastar seleciona, duplo clique pega a palavra.
+const arrasto = { ativo: false, ancora: 0, rolagem: 0, ultimo: null };
+
+function indiceNoPonto(x, y) {
+  const raiz = $("pareada");
+  const caixa = raiz.getBoundingClientRect();
+  const yDentro = Math.min(Math.max(y, caixa.top + 2), caixa.bottom - 2);
+  const alvo = document.elementFromPoint(Math.min(Math.max(x, caixa.left + 2), caixa.right - 2), yDentro);
+  if (!alvo || !raiz.contains(alvo)) return null;
+  return indiceDoClique({ target: alvo, clientX: x });
+}
+
+function seguirArrasto() {
+  if (!arrasto.ativo || !arrasto.ultimo) return;
+  const raiz = $("pareada");
+  const caixa = raiz.getBoundingClientRect();
+  const { x, y } = arrasto.ultimo;
+  let passo = 0;
+  if (y < caixa.top + 24) passo = -Math.min(40, caixa.top + 24 - y);
+  else if (y > caixa.bottom - 24) passo = Math.min(40, y - caixa.bottom + 24);
+  if (passo) raiz.scrollTop += passo;
+  const indice = indiceNoPonto(x, y);
+  if (indice != null) {
+    const area = $("texto");
+    if (indice < arrasto.ancora) area.setSelectionRange(indice, arrasto.ancora, "backward");
+    else area.setSelectionRange(arrasto.ancora, indice, "forward");
+    atualizarStatus();
+    posicionarCursorPareado(false);
+  }
+  arrasto.rolagem = passo ? window.requestAnimationFrame(seguirArrasto) : 0;
+}
+
 $("pareada").addEventListener("mousedown", (evento) => {
   if (evento.button !== 0) return;
   const indice = indiceDoClique(evento);
@@ -1405,9 +1475,33 @@ $("pareada").addEventListener("mousedown", (evento) => {
   $("texto").focus({ preventScroll: true });
   if (indice == null) return;
   pareado.colunaAlvo = null;
+  if (evento.detail === 2) {
+    const palavra = palavraEm($("texto").value, indiceDoClique(evento, true) ?? indice);
+    $("texto").setSelectionRange(palavra.de, palavra.ate, "forward");
+    atualizarStatus();
+    posicionarCursorPareado(false);
+    return;
+  }
   irParaIndice(indice, evento.shiftKey);
+  const area = $("texto");
+  arrasto.ativo = true;
+  arrasto.ancora = area.selectionDirection === "backward" ? area.selectionEnd : area.selectionStart;
   atualizarStatus();
   posicionarCursorPareado(false);
+});
+window.addEventListener("mousemove", (evento) => {
+  if (!arrasto.ativo) return;
+  if (!(evento.buttons & 1)) {
+    arrasto.ativo = false;
+    return;
+  }
+  arrasto.ultimo = { x: evento.clientX, y: evento.clientY };
+  if (!arrasto.rolagem) seguirArrasto();
+});
+window.addEventListener("mouseup", () => {
+  arrasto.ativo = false;
+  if (arrasto.rolagem) window.cancelAnimationFrame(arrasto.rolagem);
+  arrasto.rolagem = 0;
 });
 $("tinta").addEventListener("change", () => {
   desenhar();

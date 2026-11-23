@@ -6,7 +6,9 @@ import {
   foraDeLinhaEscondida,
   indiceDaPosicao,
   iniciosDasLinhas,
+  palavraEm,
   posicaoNaFaixa,
+  selecaoNaFaixa,
   vizinhaEditavel,
 } from "./cursor_pareado.js";
 
@@ -127,6 +129,45 @@ function mesmoCaractere(doc, nome) {
   const b = vizinhaEditavel(doc.faixas, a, 1);
   if (doc.faixas[b].tinta !== "bbb") falha("seta para baixo", doc.faixas.map((f) => f.tipo));
   if (vizinhaEditavel(doc.faixas, b, -1) !== a) falha("seta para cima", null);
+}
+
+// Seleção: o que pintar em cada faixa.
+{
+  const doc = preparar("<T->\nUma Casa grande e computador\nfim", { colunasPadrao: 14, linhasPadrao: 25 });
+  const { texto, faixas, inicios } = doc;
+  const pintar = (de, ate) => faixas
+    .map((faixa, i) => ({ i, faixa, sel: selecaoNaFaixa(faixa, inicios, texto, de, ate) }))
+    .filter((item) => item.sel)
+    .map(({ faixa, sel }) => ({
+      tinta: faixa.tinta.slice(sel.tinta[0], sel.tinta[1]),
+      celas: sel.braille ? sel.braille[1] - sel.braille[0] : 0,
+    }));
+  // Dentro de uma faixa: "Casa" pinta 4 colunas e 5 celas (o sinal de maiúscula entra junto).
+  const casa = texto.indexOf("Casa");
+  const so = pintar(casa, casa + 4);
+  if (so.length !== 1 || so[0].tinta !== "Casa" || so[0].celas !== 5) falha("seleção de Casa", so);
+  // Uma palavra separada entre duas faixas: pinta as duas partes, com o hífen do corte.
+  const comp = texto.indexOf("computador");
+  const partes = pintar(comp, comp + "computador".length);
+  if (partes.length !== 2 || partes.map((p) => p.tinta).join("").replace("-", "") !== "computador") falha("seleção cortada", partes);
+  if (!partes[0].tinta.endsWith("-")) falha("o hífen do corte deveria entrar na seleção", partes);
+  // Tudo: toda faixa de texto entra inteira.
+  const tudo = pintar(0, texto.length);
+  const texto2 = faixas.filter((f) => f.tipo === "texto").map((f) => f.tinta);
+  if (tudo.map((p) => p.tinta).join("|") !== texto2.join("|")) falha("selecionar tudo", { tudo, texto2 });
+  // Seleção vazia não pinta nada.
+  if (pintar(casa, casa).length) falha("seleção vazia", null);
+}
+
+// Palavra do duplo clique.
+{
+  const texto = "Olá, mundo-novo 123.";
+  const p1 = palavraEm(texto, 1);
+  if (texto.slice(p1.de, p1.ate) !== "Olá") falha("palavra", p1);
+  const p2 = palavraEm(texto, texto.indexOf("novo"));
+  if (texto.slice(p2.de, p2.ate) !== "novo") falha("palavra com hífen", p2);
+  const p3 = palavraEm(texto, 3);
+  if (texto.slice(p3.de, p3.ate) !== "Olá") falha("fim de palavra", p3);
 }
 
 console.log("ok");

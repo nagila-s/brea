@@ -472,3 +472,18 @@ body.modo-pareado .painel { grid-column: 1 / -1; border-left: 0; }
 /* Livro grande: o navegador só calcula o layout das faixas perto da tela. */
 .pareada > .faixa { content-visibility: auto; contain-intrinsic-size: auto 30px; }
 .pareada > .faixa-quebra { contain-intrinsic-size: auto 22px; }
+
+/* Seleção no modo pareado: amarelo atrás da tinta e das celas correspondentes. */
+/* isolation: a seleção (z-index -1) fica acima do fundo do lado e abaixo das letras. */
+.lado-tinta, .lado-braille { position: relative; isolation: isolate; }
+.selecao-pareada {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  background: rgba(255, 196, 0, 0.6);
+  pointer-events: none;
+  z-index: -1;
+}
+.sel-tinta { left: calc(6px + var(--de) * 1ch); width: calc(var(--n) * 1ch); }
+.sel-braille { left: calc(14px + var(--de) * var(--cela, 22px)); width: calc(var(--n) * var(--cela, 22px)); }
+.pareada.com-selecao .cursor-pareado { opacity: 0.6; }
