@@ -1,6 +1,6 @@
 :root {
   /* Paleta: preto e cinzas, amarelo só para destaque. */
-  --fundo: #0d0d0d;          /* área de trabalho (editor e vista) */
+  --fundo: #0d0d0d;          /* fundo das barras e diálogos */
   --superficie: #1a1a1a;     /* menus, barras, títulos de painel */
   --superficie-2: #262626;   /* segunda barra, submenus */
   --borda: #3a3a3a;
@@ -103,8 +103,6 @@ button, select, input { font: inherit; color: inherit; }
   line-height: 1.35;
 }
 
-.editor.revisor { background: #ece4c4; }
-
 .perkins-mostra {
   font-family: "Segoe UI Symbol", "Segoe UI", sans-serif;
   font-size: 42px;
@@ -123,18 +121,15 @@ dialog legend { color: var(--destaque); padding: 0 4px; }
 
 dialog label { display: flex; gap: 8px; align-items: center; margin: 4px 0; }
 
+/* Impressão: só a área montada na hora (app.js, imprimir), preto no branco. */
+.impressao { display: none; }
 @media print {
-  body[data-impressao="texto"] .painel,
-  body[data-impressao="texto"] .janela,
-  body[data-impressao="texto"] .status,
-  body[data-impressao="texto"] #cinco,
-  body[data-impressao="braille"] .editor,
-  body[data-impressao="braille"] .janela,
-  body[data-impressao="braille"] .status,
-  body[data-impressao="braille"] #cinco { display: none !important; }
-  body[data-impressao="braille"] .miolo { display: block; }
-  :root, .miolo, .painel, .editor { background: #fff !important; color: #000 !important; }
-  .linha-vista.atual, .grupo.cursor { background: transparent !important; box-shadow: none !important; }
+  body[data-impressao] > :not(#impressao) { display: none !important; }
+  html:has(body[data-impressao]), body[data-impressao] { background: #fff !important; color: #000 !important; display: block; height: auto; }
+  .impressao:not([hidden]) { display: block; }
+  .impressao pre { margin: 0; white-space: pre-wrap; font-family: Consolas, "Cascadia Mono", monospace; font-size: 11pt; }
+  .impressao .folha-braille { font-family: "Segoe UI Symbol", "Segoe UI", sans-serif; font-size: 16pt; line-height: 1.25; white-space: pre; break-after: page; }
+  .impressao .folha-braille:last-child { break-after: auto; }
 }
 
 .ferramentas {
@@ -158,56 +153,45 @@ dialog label { display: flex; gap: 8px; align-items: center; margin: 4px 0; }
 
 .cheque { display: flex; align-items: center; gap: 6px; }
 
+/* O textarea guarda o texto e recebe o teclado (acentos, colar, desfazer), mas não aparece:
+   quem a pessoa vê e clica é o editor pareado. */
 .editor {
-  height: 100%;
-  width: 100%;
-  min-width: 0;
-  min-height: 0;
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 400px;
+  height: 40px;
+  padding: 0;
   margin: 0;
-  padding: 12px 14px;
   border: 0;
   resize: none;
-  background: var(--papel);
-  color: var(--papel-texto);
-  caret-color: var(--papel-texto);
-  /* Monoespaçada e com a largura das colunas braille: o texto quebra perto de onde o braille quebra. */
-  justify-self: start;
-  margin-left: 16px;
-  max-width: calc(100% - 16px);
+  opacity: 0;
+  pointer-events: none;
+  z-index: -1;
   font-family: Consolas, "Cascadia Mono", monospace;
-  font-size: 22px;
-  line-height: 1.45;
-  white-space: pre-wrap;
-  overflow-wrap: break-word;
-  overflow-x: hidden;
-  overflow-y: auto;
-  /* Os dois lados rolam juntos: a barra fica só na vista braille. */
-  scrollbar-width: none;
+  /* Sem quebra automática: com 77 mil caracteres, quebrar a cada tecla custava segundos. */
+  white-space: pre;
+  overflow-wrap: normal;
+  overflow: hidden;
+  contain: strict;
 }
-
-.editor::-webkit-scrollbar { display: none; }
-
-.editor:focus { outline: none; }
-
-.editor::selection { background: var(--destaque); color: var(--destaque-texto); }
 
 .miolo {
   flex: 1;
   min-height: 0;
   background: var(--papel);
   color: var(--papel-texto);
-  display: grid;
-  grid-template-columns: 1fr 1fr;
+  display: flex;
 }
 
 .painel {
+  flex: 1;
   display: flex;
   flex-direction: column;
   min-width: 0;
   min-height: 0;
   background: var(--papel);
   color: var(--papel-texto);
-  border-left: 1px solid var(--papel-borda);
 }
 
 .painel-titulo {
@@ -216,50 +200,6 @@ dialog label { display: flex; gap: 8px; align-items: center; margin: 4px 0; }
   border-bottom: 1px solid var(--borda);
   color: var(--texto-suave);
   font-size: 13px;
-}
-
-#vista {
-  position: relative;
-  flex: 1;
-  overflow: auto;
-  padding: 12px 14px;
-}
-
-.linha-vista {
-  display: block;
-  height: var(--faixa, 26px);
-  line-height: var(--faixa, 26px);
-  padding: 0 2px;
-  white-space: pre;
-  overflow: hidden;
-  cursor: text;
-}
-
-.linha-vista.atual { background: var(--papel-destaque); box-shadow: inset 3px 0 0 var(--papel-marca); }
-
-.linha-vista.braille {
-  font-family: "Segoe UI Symbol", "Segoe UI", sans-serif;
-  font-size: min(22px, calc(var(--faixa, 26px) * 0.85));
-}
-
-.linha-vista.tinta {
-  font-family: Consolas, "Cascadia Mono", monospace;
-  font-size: min(16px, calc(var(--faixa, 26px) * 0.7));
-}
-
-.linha-vista.codigo {
-  color: var(--papel-suave);
-  font-family: Consolas, "Cascadia Mono", monospace;
-  font-size: min(15px, calc(var(--faixa, 26px) * 0.65));
-}
-
-.linha-vista.nao { color: var(--papel-aviso); }
-
-.linha-vista.separador {
-  color: var(--papel-suave);
-  font-size: 12px;
-  background: #d2d2d2;
-  border-top: 1px solid var(--papel-borda);
 }
 
 .grupo {
@@ -362,28 +302,6 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--destaque); }
   --marca-m: #e6dfcf;  --marca-m-forte: #8e7c55;   /* M margem */
   --comentario: #d4d4d4;
 }
-
-/* No modo pareado o textarea continua recebendo o teclado, mas não aparece. */
-body.modo-pareado .editor {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 400px;
-  height: 40px;
-  padding: 0;
-  margin: 0;
-  opacity: 0;
-  pointer-events: none;
-  z-index: -1;
-  /* Sem quebra automática: com 77 mil caracteres, quebrar a cada tecla custava segundos. */
-  white-space: pre;
-  overflow-wrap: normal;
-  overflow: hidden;
-  contain: strict;
-}
-body.modo-pareado #vista { display: none; }
-
-body.modo-pareado .painel { grid-column: 1 / -1; border-left: 0; }
 
 .pareada {
   flex: 1;

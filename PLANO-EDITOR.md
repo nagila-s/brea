@@ -68,7 +68,7 @@ A partir de cada linha braille dá para recortar o pedaço de tinta que a gerou,
 | 7 | Remover o textarea antigo e a sincronia por estimativa | Testes verdes e verificação no navegador. |
 | 8 | Palavra inteira na última linha, Finalizar e Remover quebras | No livro real: nenhuma palavra separada entre páginas; braille idêntico antes e depois de finalizar; remover devolve a paginação automática. |
 
-Até a etapa 7, o editor atual continua funcionando e é o padrão. O novo entra por uma opção, e a troca só acontece quando ele estiver completo.
+Até a etapa 6, o editor antigo continuou sendo o padrão e o novo entrava pela opção "Pareado". Desde a etapa 7, o pareado é o único editor: a opção, a vista braille antiga e a sincronia por estimativa saíram.
 
 ## Decisões tomadas
 

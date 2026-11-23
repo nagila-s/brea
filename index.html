@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Braille Fácil</title>
-  <link rel="stylesheet" href="estilo.css?edicao=39">
+  <link rel="stylesheet" href="estilo.css?edicao=40">
 </head>
 <body>
   <header class="janela">
@@ -202,20 +202,18 @@
           <option value="antigo">Braille antigo</option>
         </select>
       </label>
-      <label class="cheque"><input id="tinta" type="checkbox"> Tinta</label>
-      <label class="cheque" title="Tinta e braille linha a linha (só leitura por enquanto)"><input id="pareado" type="checkbox"> Pareado</label>
     </div>
     <div id="cinco" class="cinco" hidden></div>
   </header>
 
   <div class="miolo">
-    <textarea id="texto" class="editor" spellcheck="false" wrap="soft" aria-label="Texto digitado"></textarea>
-    <section class="painel" aria-label="Braille">
+    <textarea id="texto" class="editor" spellcheck="false" wrap="off" aria-label="Texto digitado"></textarea>
+    <section class="painel" aria-label="Tinta e braille">
       <div id="painel-titulo" class="painel-titulo">Braille</div>
-      <div id="vista"></div>
-      <div id="pareada" class="pareada" hidden aria-label="Tinta e braille pareados"></div>
+      <div id="pareada" class="pareada" aria-label="Tinta e braille pareados"></div>
     </section>
   </div>
+  <div id="impressao" class="impressao" hidden></div>
 
   <footer class="status">
     <span id="st-lin">Lin: 1</span>
@@ -353,6 +351,6 @@
     </div>
   </dialog>
 
-  <script type="module" src="app.js?edicao=47"></script>
+  <script type="module" src="app.js?edicao=48"></script>
 </body>
 </html>

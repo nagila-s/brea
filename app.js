@@ -34,15 +34,8 @@ const $ = (id) => document.getElementById(id);
 const estado = {
   nome: "sem título",
   sujo: false,
-  timer: 0,
-  quadro: 0,
   persistTimer: 0,
-  formato: null,
-  formatoTinta: false,
-  formatoSujo: true,
-  rolagemVista: 0,
-  rolagemTexto: 0,
-  quadroTexto: 0,
+  tituloTimer: 0,
   fonte: 22,
   dicionario: null,
   inibidas: new Set(),
@@ -152,173 +145,6 @@ function grade(dots) {
   return caixa;
 }
 
-// As duas colunas rolam juntas. A linha do texto no topo do editor fica pareada com a
-// primeira faixa que ela gerou na vista, e as faixas têm a altura da linha do editor:
-// trechos que não quebram seguem lado a lado na tela inteira.
-function alturaLinha() {
-  const altura = parseFloat(getComputedStyle($("texto")).lineHeight);
-  return Number.isFinite(altura) && altura > 0 ? altura : 26;
-}
-
-// O editor quebra as linhas na largura das colunas braille, então uma linha do texto pode
-// ocupar várias linhas na tela. Um espelho invisível, com a mesma fonte e largura, mede onde
-// cada linha do texto começa: topos[L] em px, topos[total] = altura do conteúdo.
-function geometriaDoTexto() {
-  const area = $("texto");
-  const estilo = getComputedStyle(area);
-  const largura = area.clientWidth - parseFloat(estilo.paddingLeft) - parseFloat(estilo.paddingRight);
-  const valor = area.value;
-  const chave = `${largura}|${estilo.fontFamily}|${estilo.fontSize}|${estilo.lineHeight}`;
-  if (estado.geometria && estado.geometria.chave === chave && estado.geometria.valor === valor) {
-    return estado.geometria.topos;
-  }
-  if (!estado.espelho) {
-    estado.espelho = document.createElement("div");
-    estado.espelho.setAttribute("aria-hidden", "true");
-    Object.assign(estado.espelho.style, {
-      position: "absolute",
-      visibility: "hidden",
-      left: "-99999px",
-      top: "0",
-      whiteSpace: "pre-wrap",
-      overflowWrap: "break-word",
-    });
-    document.body.append(estado.espelho);
-  }
-  const espelho = estado.espelho;
-  Object.assign(espelho.style, {
-    width: `${largura}px`,
-    fontFamily: estilo.fontFamily,
-    fontSize: estilo.fontSize,
-    fontWeight: estilo.fontWeight,
-    lineHeight: estilo.lineHeight,
-    letterSpacing: estilo.letterSpacing,
-    tabSize: estilo.tabSize,
-  });
-  const linhas = valor.split("\n");
-  const pedaco = document.createDocumentFragment();
-  for (const linha of linhas) {
-    const div = document.createElement("div");
-    div.textContent = linha || "​";
-    pedaco.append(div);
-  }
-  espelho.replaceChildren(pedaco);
-  const topos = Array.from(espelho.children, (div) => div.offsetTop);
-  topos.push(espelho.offsetHeight);
-  espelho.replaceChildren();
-  estado.geometria = { chave, valor, topos };
-  return topos;
-}
-
-// Posição no editor (px) <-> linha do texto com fração (3.5 = metade da linha 3 na tela).
-function linhaDoTopo(topos, y) {
-  const total = topos.length - 1;
-  if (total <= 0 || y <= 0) return 0;
-  let baixo = 0;
-  let alto = total - 1;
-  while (baixo < alto) {
-    const meio = (baixo + alto + 1) >> 1;
-    if (topos[meio] <= y) baixo = meio;
-    else alto = meio - 1;
-  }
-  const altura = topos[baixo + 1] - topos[baixo];
-  return baixo + (altura > 0 ? Math.min(1, (y - topos[baixo]) / altura) : 0);
-}
-
-function topoDaLinha(topos, posicaoTexto) {
-  const total = topos.length - 1;
-  if (total <= 0) return 0;
-  const linha = Math.min(total - 1, Math.max(0, Math.floor(posicaoTexto)));
-  const fracao = Math.min(1, Math.max(0, posicaoTexto - linha));
-  return topos[linha] + fracao * (topos[linha + 1] - topos[linha]);
-}
-
-// A largura do editor é a das colunas braille mais os 10 espaços que marcam uma linha
-// centralizada, para ela não quebrar e voltar para a coluna 0.
-const FOLGA_CENTRALIZADO = 10;
-
-function ajustarLarguraEditor() {
-  const largura = `calc(${colunasAtuais() + FOLGA_CENTRALIZADO}ch + 28px)`;
-  if ($("texto").style.width !== largura) $("texto").style.width = largura;
-}
-
-// inicio[L] = primeira faixa gerada pela linha L do texto (ou pela seguinte que gerou alguma).
-function mapaDeLinhas(formato, total) {
-  if (formato.mapa && formato.mapa.length === total + 1) return formato.mapa;
-  const inicio = new Array(total + 1).fill(formato.linhas.length);
-  let maior = -1;
-  let proxima = 0;
-  formato.linhas.forEach((item, indice) => {
-    maior = Math.max(maior, item.origem ?? 0);
-    while (proxima < total && proxima <= maior) {
-      inicio[proxima] = indice;
-      proxima += 1;
-    }
-  });
-  formato.mapa = inicio;
-  return inicio;
-}
-
-function faixaDaLinha(inicio, posicaoTexto) {
-  const total = inicio.length - 1;
-  if (total <= 0) return 0;
-  const linha = Math.min(total - 1, Math.max(0, Math.floor(posicaoTexto)));
-  const fracao = Math.min(1, Math.max(0, posicaoTexto - linha));
-  return inicio[linha] + fracao * (inicio[linha + 1] - inicio[linha]);
-}
-
-function linhaDaFaixa(inicio, posicaoVista) {
-  const total = inicio.length - 1;
-  if (total <= 0 || posicaoVista <= 0) return 0;
-  let baixo = 0;
-  let alto = total - 1;
-  while (baixo < alto) {
-    const meio = (baixo + alto + 1) >> 1;
-    if (inicio[meio] <= posicaoVista) baixo = meio;
-    else alto = meio - 1;
-  }
-  const largura = inicio[baixo + 1] - inicio[baixo];
-  return baixo + (largura > 0 ? Math.min(1, Math.max(0, (posicaoVista - inicio[baixo]) / largura)) : 0);
-}
-
-// Faixas que correspondem à linha do cursor, numa passada só (de trás para frente).
-function faixasDoCursor(linhas, linhaCursor) {
-  const cobre = new Set();
-  let primeira = null;
-  let proxima = null;
-  for (let indice = linhas.length - 1; indice >= 0; indice -= 1) {
-    const item = linhas[indice];
-    if (item.separador) continue;
-    if (item.origem <= linhaCursor && (proxima == null || proxima > linhaCursor)) {
-      cobre.add(indice);
-      primeira = indice;
-    }
-    proxima = item.origem;
-  }
-  return { cobre, primeira: primeira ?? 0 };
-}
-
-function vistaAtual(tinta) {
-  if (!estado.formato || estado.formatoTinta !== tinta || estado.formatoSujo) {
-    estado.formato = formatar(linhasDoTexto(), opcoes(), tinta);
-    estado.formatoTinta = tinta;
-    estado.formatoSujo = false;
-  }
-  return estado.formato;
-}
-
-function desenharFaixa(item, cursor) {
-  const faixa = document.createElement("div");
-  faixa.className = `linha-vista ${item.tipo}`;
-  faixa.dataset.linha = String(item.origem ?? 0);
-  if (item.separador) faixa.classList.add("separador");
-  if (item.nao) faixa.classList.add("nao");
-  if (!item.separador && item.origem === cursor.linha) faixa.classList.add("atual");
-  faixa.textContent = item.texto || " ";
-  if (item.titulo) faixa.title = item.titulo;
-  return faixa;
-}
-
 function atualizarStatus() {
   const cursor = posicao();
   const linha = cursor.texto;
@@ -345,100 +171,18 @@ function atualizarStatus() {
   return cursor;
 }
 
-// Sem argumento, a vista se alinha ao editor. Com um número, a vista fica nessa rolagem
-// (é o usuário rolando o braille) e o editor é que vai atrás, em rolarTextoPelaVista.
-function desenharVista(rolagemVista) {
-  sincronizarModo();
-  if (pareadoLigado()) {
-    desenharModoPareado(false);
-    return;
-  }
-  const cursor = posicao();
-  const tinta = $("tinta").checked;
-  const formato = vistaAtual(tinta);
-  const linhas = formato.linhas;
-  const raiz = $("vista");
-  const area = $("texto");
-  const altura = alturaLinha();
-  ajustarLarguraEditor();
-  const topos = geometriaDoTexto();
-  const total = topos.length - 1;
-  const inicioDaLinha = mapaDeLinhas(formato, total);
-  const nome = tinta ? "Tinta — texto da impressora" : "Braille";
-  const situacao = resumo(preparar(linhasDoTexto())[cursor.linha]);
-  const doCursor = faixasDoCursor(linhas, cursor.linha);
-  const pagina = (linhas[doCursor.primeira]?.pagina ?? 0) + 1;
-  const partes = [nome];
-  if (!situacao.includes("×")) partes.push(`${formato.colunas}×${formato.altura}`);
-  partes.push(`página ${pagina} de ${formato.paginas}`);
-  if (situacao) partes.push(situacao);
-  // O original mostrava estas mensagens em caixas a cada compilação; aqui ficam no título do painel.
-  const avisos = formato.avisos || [];
-  if (avisos.length) partes.push(`⚠ ${avisos.length} ${avisos.length === 1 ? "aviso" : "avisos"}`);
-  $("painel-titulo").textContent = partes.join(" · ");
-  $("painel-titulo").title = avisos.map((aviso) => aviso.texto).join("\n");
-
-  // Folga no fim de cada lado, para os finais também ficarem pareados.
-  const visiveisVista = (raiz.clientHeight || 400) / altura;
-  const maxVista = Math.max(0, linhas.length - visiveisVista);
-  const maxTextoY = Math.max(0, topos[total] + 24 - area.clientHeight);
-  const faltaTexto = Math.max(0, topoDaLinha(topos, linhaDaFaixa(inicioDaLinha, maxVista)) - maxTextoY);
-  const faltaVista = Math.max(0, faixaDaLinha(inicioDaLinha, linhaDoTopo(topos, maxTextoY)) - maxVista);
-  const folgaTexto = `${12 + Math.ceil(faltaTexto)}px`;
-  if (area.style.paddingBottom !== folgaTexto) area.style.paddingBottom = folgaTexto;
-
-  // Fim com fim: o editor no fundo leva a vista ao fundo.
-  const textoNoFim = area.scrollTop > 0 && area.scrollTop >= area.scrollHeight - area.clientHeight - 1;
-  const maxRolagem = Math.max(0, (linhas.length + faltaVista) * altura + 24 - (raiz.clientHeight || 400));
-  const alvo = Math.min(maxRolagem, rolagemVista ?? (textoNoFim ? maxRolagem : faixaDaLinha(inicioDaLinha, linhaDoTopo(topos, area.scrollTop)) * altura));
-  const quantidade = Math.ceil(visiveisVista) + 8;
-  const inicio = Math.max(0, Math.min(linhas.length, Math.floor(alvo / altura) - 3));
-  const fim = Math.min(linhas.length, inicio + quantidade);
-  raiz.style.setProperty("--faixa", `${altura}px`);
-  const antes = document.createElement("div");
-  antes.style.height = `${inicio * altura}px`;
-  const miolo = document.createElement("div");
-  for (let indice = inicio; indice < fim; indice += 1) {
-    const faixa = desenharFaixa(linhas[indice], cursor);
-    if (doCursor.cobre.has(indice)) faixa.classList.add("atual");
-    miolo.append(faixa);
-  }
-  const depois = document.createElement("div");
-  depois.style.height = `${(Math.max(0, linhas.length - fim) + faltaVista) * altura}px`;
-  raiz.replaceChildren(antes, miolo, depois);
-  raiz.scrollTop = alvo;
-  estado.rolagemVista = raiz.scrollTop;
-}
-
-function rolarTextoPelaVista() {
-  const area = $("texto");
-  const altura = alturaLinha();
-  const topos = geometriaDoTexto();
-  const inicioDaLinha = mapaDeLinhas(vistaAtual($("tinta").checked), topos.length - 1);
-  const raiz = $("vista");
-  const vistaNoFim = raiz.scrollTop > 0 && raiz.scrollTop >= raiz.scrollHeight - raiz.clientHeight - 1;
-  area.scrollTop = vistaNoFim ? area.scrollHeight : topoDaLinha(topos, linhaDaFaixa(inicioDaLinha, raiz.scrollTop / altura));
-  estado.rolagemTexto = area.scrollTop;
-}
-
+// Opções mudaram (código, fonte, menus): refaz tudo, inclusive as medidas.
 function desenhar() {
-  estado.formatoSujo = true;
   pareado.sujo = true;
   pareado.sujoTotal = true;
   atualizarStatus();
-  if (pareadoLigado()) desenharModoPareado();
-  else desenharVista();
-  desenharCinco();
+  desenharModoPareado();
 }
 
-// Etapa 2 do PLANO-EDITOR: vista pareada só de leitura, no lugar do editor e da vista braille.
-function pareadoLigado() {
-  return $("pareado").checked;
-}
-
-// ---------- Editor pareado (PLANO-EDITOR, etapas 2 e 3) ----------
-// O textarea continua sendo o modelo e recebe o teclado (acentos, colar, desfazer), mas fica
-// invisível; o que a pessoa vê e clica são as faixas. O cursor é a posição no textarea.
+// ---------- Editor pareado (PLANO-EDITOR) ----------
+// O textarea é o modelo e recebe o teclado (acentos, colar, desfazer), mas fica invisível; o
+// que a pessoa vê e clica são as faixas: tinta e braille lado a lado, linha a linha. O cursor
+// é a posição no textarea.
 const pareado = {
   texto: null,
   sujo: true,
@@ -455,7 +199,6 @@ const pareado = {
 };
 
 function desenharModoPareado(seguir = true) {
-  sincronizarModo();
   const area = $("texto");
   // Com as alturas medidas de novo (fonte, opções), a tela volta a mostrar o cursor.
   const remedir = pareado.sujoTotal;
@@ -491,7 +234,32 @@ function reconstruirPareado() {
   if (pareado.sujoTotal) janela.medir();
   pareado.sujoTotal = false;
   // O desenho fica para posicionarCursorPareado, que sabe para onde a tela vai.
-  $("painel-titulo").textContent = `Pareado · ${formato.colunas}×${formato.altura} · ${formato.paginas} páginas`;
+  pareado.formato = { colunas: formato.colunas, altura: formato.altura, paginas: formato.paginas, avisos: formato.avisos || [] };
+  agendarTitulo();
+}
+
+// O título sai alguns instantes depois da última mudança: a situação dos códigos precisa
+// percorrer o texto até o cursor e não deve pesar em cada tecla.
+function agendarTitulo() {
+  window.clearTimeout(estado.tituloTimer);
+  estado.tituloTimer = window.setTimeout(atualizarTitulo, 150);
+}
+
+function atualizarTitulo() {
+  const formato = pareado.formato;
+  if (!formato) return;
+  const cursor = posicao();
+  const linhas = pareado.texto.slice(0, pareado.inicios[cursor.linha + 1] ?? pareado.texto.length).split("\n");
+  const situacao = resumo(preparar(linhas)[cursor.linha]);
+  const pagina = (pareado.faixas[pareado.cursorFaixa]?.pagina ?? 0) + 1;
+  const partes = [];
+  if (!situacao.includes("×")) partes.push(`${formato.colunas}×${formato.altura}`);
+  partes.push(`página ${pagina} de ${formato.paginas}`);
+  if (situacao) partes.push(situacao);
+  // O original mostrava estas mensagens em caixas a cada compilação; aqui ficam no título.
+  if (formato.avisos.length) partes.push(`⚠ ${formato.avisos.length} ${formato.avisos.length === 1 ? "aviso" : "avisos"}`);
+  $("painel-titulo").textContent = partes.join(" · ");
+  $("painel-titulo").title = formato.avisos.map((aviso) => aviso.texto).join("\n");
 }
 
 function posicaoPareada(indice) {
@@ -572,6 +340,7 @@ function posicionarCursorPareado(seguir) {
   if (!janela.altura(alvo)) {
     alvo = vizinhaEditavel(pareado.faixas, posicao.faixa, 1) ?? vizinhaEditavel(pareado.faixas, posicao.faixa, -1);
   }
+  if (pareado.cursorFaixa !== alvo) agendarTitulo();
   pareado.cursorFaixa = alvo;
   pareado.cursorColuna = posicao.coluna;
   // A posição da faixa vem da soma das alturas: rolar não depende de ela estar desenhada.
@@ -652,7 +421,6 @@ function indiceDoClique(evento, sobLetra = false) {
 }
 
 function teclaPareada(evento) {
-  if (!pareadoLigado()) return;
   const area = $("texto");
   if (pareado.sujo || pareado.texto !== area.value) reconstruirPareado();
   const vertical = evento.key === "ArrowUp" || evento.key === "ArrowDown";
@@ -711,7 +479,7 @@ function teclaPareada(evento) {
 const sincronia = { de: -1, ate: -1, quadro: 0 };
 
 function sincronizarPareado() {
-  if (!pareadoLigado() || sincronia.quadro) return;
+  if (sincronia.quadro) return;
   sincronia.quadro = window.requestAnimationFrame(() => {
     sincronia.quadro = 0;
     const area = $("texto");
@@ -723,7 +491,6 @@ function sincronizarPareado() {
 
 // Depois de um movimento nativo (setas, digitação): tira o cursor das linhas de código.
 function aposMovimentoPareado() {
-  if (!pareadoLigado()) return;
   const area = $("texto");
   if (pareado.sujo || pareado.texto !== area.value) reconstruirPareado();
   if (area.selectionStart === area.selectionEnd) {
@@ -736,18 +503,6 @@ function aposMovimentoPareado() {
   posicionarCursorPareado(true);
 }
 
-function sincronizarModo() {
-  const ligado = pareadoLigado();
-  document.body.classList.toggle("modo-pareado", ligado);
-  $("pareada").hidden = !ligado;
-}
-
-function aplicarModoPareado() {
-  sincronizarModo();
-  if (pareadoLigado()) desenharModoPareado();
-  else desenharVista();
-}
-
 function desenharCinco() {
   const caixa = $("cinco");
   if (!$("cinco-linhas").checked) {
@@ -755,24 +510,25 @@ function desenharCinco() {
     return;
   }
   caixa.hidden = false;
-  const formato = vistaAtual($("tinta").checked);
-  const cursor = posicao();
-  const indice = faixasDoCursor(formato.linhas, cursor.linha).primeira;
-  const fatia = formato.linhas.slice(Math.max(0, indice - 2), Math.max(0, indice - 2) + 5);
+  const comBraille = [];
+  let doCursor = 0;
+  pareado.faixas.forEach((faixa, indice) => {
+    if (!faixa.braille || (faixa.tipo !== "texto" && faixa.tipo !== "branco" && faixa.tipo !== "cabecalho")) return;
+    if (indice <= (pareado.cursorFaixa ?? 0)) doCursor = comBraille.length;
+    comBraille.push(faixa);
+  });
+  const de = Math.max(0, doCursor - 2);
   caixa.replaceChildren();
-  for (const item of fatia) {
+  for (const faixa of comBraille.slice(de, de + 5)) {
     const linha = document.createElement("div");
-    linha.className = item.tipo === "braille" ? "braille" : "";
-    linha.textContent = item.texto || " ";
+    linha.className = "braille";
+    linha.textContent = textoBraille(faixa.braille) || " ";
     caixa.append(linha);
   }
 }
 
-function agendar() {
-  window.clearTimeout(estado.timer);
-  // No modo pareado quem redesenha depois de digitar é aposMovimentoPareado.
-  if (pareadoLigado()) return;
-  estado.timer = window.setTimeout(() => desenhar(false), 60);
+function textoBraille(celas) {
+  return celas.map((cela) => (cela.tipo === "espaco" ? "⠀" : unicodeDaCela(cela.dots))).join("").replace(/⠀+$/, "");
 }
 
 function persistir() {
@@ -784,8 +540,6 @@ function persistir() {
     maiuscula: $("maiuscula").checked,
     maiusculaPalavra: $("maiuscula-palavra").checked,
     numero: $("numero").checked,
-    tinta: $("tinta").checked,
-    pareado: $("pareado").checked,
     comTitulo: $("com-titulo").checked,
     tiraBrancas: $("tira-brancas").checked,
     numeracao: $("numeracao").value,
@@ -848,8 +602,6 @@ function restaurar() {
     $("maiuscula").checked = dados.maiuscula !== false;
     $("maiuscula-palavra").checked = dados.maiusculaPalavra !== false;
     $("numero").checked = dados.numero !== false;
-    $("tinta").checked = Boolean(dados.tinta);
-    $("pareado").checked = Boolean(dados.pareado);
     if (typeof dados.comTitulo === "boolean") $("com-titulo").checked = dados.comTitulo;
     if (typeof dados.tiraBrancas === "boolean") $("tira-brancas").checked = dados.tiraBrancas;
     if (dados.numeracao != null) $("numeracao").value = String(dados.numeracao);
@@ -873,9 +625,7 @@ function fecharMenus() {
   for (const botao of document.querySelectorAll(".menu-item > button")) botao.setAttribute("aria-expanded", "false");
 }
 
-// Clique numa linha da vista: o cursor vai para a linha de origem e a vista fica onde está.
-// focus() comum rolaria o editor até a posição antiga do cursor (o topo do livro, por exemplo),
-// e a vista iria junto; por isso o editor se alinha à vista.
+// Leva o cursor a uma linha e coluna do texto (busca, ortografia...) e mostra no pareado.
 function irPara(linha, coluna) {
   const linhas = linhasDoTexto();
   let pos = 0;
@@ -884,32 +634,17 @@ function irPara(linha, coluna) {
   const area = $("texto");
   area.focus({ preventScroll: true });
   area.setSelectionRange(pos, pos);
-  if (pareadoLigado()) {
-    pareado.ultimoIndice = pos;
-    atualizarStatus();
-    aposMovimentoPareado();
-    return;
-  }
-  rolarTextoPelaVista();
+  pareado.ultimoIndice = pos;
   atualizarStatus();
-  const topos = geometriaDoTexto();
-  const y = topos[Math.min(linha, topos.length - 1)] ?? 0;
-  if (y < area.scrollTop || y > area.scrollTop + area.clientHeight - alturaLinha()) {
-    // Se o pareamento deixou a linha fora do editor, o editor vai até ela e a vista acompanha.
-    area.scrollTop = Math.max(0, y - area.clientHeight / 3);
-    estado.rolagemTexto = area.scrollTop;
-    desenharVista();
-    return;
-  }
-  desenharVista($("vista").scrollTop);
+  aposMovimentoPareado();
 }
 
 // Ao abrir um texto, o cursor e a rolagem ficam no começo do livro.
 function irAoInicio() {
   const area = $("texto");
   area.setSelectionRange(0, 0);
-  area.scrollTop = 0;
-  estado.rolagemTexto = 0;
+  $("pareada").scrollTop = 0;
+  pareado.ultimoIndice = 0;
   area.focus({ preventScroll: true });
 }
 
@@ -1133,6 +868,39 @@ function exportarWord(tinta) {
   baixar(tinta ? "tinta.doc" : "braille.doc", html, "application/msword");
 }
 
+// Imprimir: o texto do .txt, ou o braille do livro inteiro com uma página braille por folha.
+// A área de impressão só existe enquanto a janela de impressão está aberta.
+function imprimir(tipo) {
+  const area = $("impressao");
+  area.replaceChildren();
+  if (tipo === "texto") {
+    const pre = document.createElement("pre");
+    pre.textContent = $("texto").value;
+    area.append(pre);
+  } else {
+    if (pareado.sujo || pareado.texto !== $("texto").value) reconstruirPareado();
+    let pagina = null;
+    let folha = null;
+    for (const faixa of pareado.faixas) {
+      if (faixa.tipo !== "texto" && faixa.tipo !== "branco" && faixa.tipo !== "cabecalho") continue;
+      if (!folha || faixa.pagina !== pagina) {
+        folha = document.createElement("pre");
+        folha.className = "folha-braille";
+        area.append(folha);
+        pagina = faixa.pagina;
+      }
+      folha.append(`${textoBraille(faixa.braille || [])}\n`);
+    }
+  }
+  area.dataset.tipo = tipo;
+  area.hidden = false;
+  document.body.dataset.impressao = tipo;
+  window.print();
+  document.body.dataset.impressao = "";
+  area.hidden = true;
+  area.replaceChildren();
+}
+
 function metaDaSelecao() {
   const area = $("texto");
   const trecho = area.value.slice(area.selectionStart, area.selectionEnd);
@@ -1263,20 +1031,15 @@ function acao(nome) {
     const tamanho = window.prompt("Tamanho da fonte na tela", String(estado.fonte));
     if (tamanho && Number(tamanho)) {
       aplicarFonte(tamanho);
-      desenharVista();
+      desenharModoPareado(false);
       persistir();
     }
-  } else if (nome === "tinta") {
-    $("tinta").checked = !$("tinta").checked;
-    desenhar();
-    persistir();
   } else if (nome === "cinco") {
     $("cinco-linhas").checked = !$("cinco-linhas").checked;
     desenharCinco();
   } else if (nome === "revisor") {
     const ligado = !$("texto").readOnly;
     $("texto").readOnly = ligado;
-    $("texto").classList.toggle("revisor", ligado);
     $("pareada").classList.toggle("revisor", ligado);
     $("st-revisor").textContent = ligado ? "Modo de revisão - apenas leitura" : "";
   } else if (nome === "atualizar" || nome === "visualizar") desenhar(true);
@@ -1316,19 +1079,7 @@ function acao(nome) {
     area.focus();
     area.setSelectionRange(onde, fecha < 0 ? onde + 4 : fecha + 4);
   } else if (nome === "imprimir-texto" || nome === "imprimir-braille") {
-    // A impressão usa o editor e a vista de sempre; window.print() bloqueia até fechar.
-    const eraPareado = pareadoLigado();
-    if (eraPareado) {
-      $("pareado").checked = false;
-      aplicarModoPareado();
-    }
-    document.body.dataset.impressao = nome === "imprimir-texto" ? "texto" : "braille";
-    window.print();
-    document.body.dataset.impressao = "";
-    if (eraPareado) {
-      $("pareado").checked = true;
-      aplicarModoPareado();
-    }
+    imprimir(nome === "imprimir-texto" ? "texto" : "braille");
   } else if (nome === "braille-word") exportarWord(false);
   else if (nome === "tinta-word") exportarWord(true);
   else if (nome === "salvar-config") {
@@ -1480,17 +1231,6 @@ montarRecentes();
 preencherSimbolos();
 irAoInicio();
 desenhar();
-window.requestAnimationFrame(() => desenharVista());
-window.addEventListener("resize", () => desenharVista());
-
-let linhaVista = -1;
-function aposCursor(seguir) {
-  const cursor = atualizarStatus();
-  if (seguir || cursor.linha !== linhaVista) {
-    linhaVista = cursor.linha;
-    desenharVista();
-  }
-}
 
 $("texto").addEventListener("input", () => {
   if ($("quebra-auto").checked && !$("texto").readOnly) {
@@ -1505,24 +1245,12 @@ $("texto").addEventListener("input", () => {
     }
   }
   estado.sujo = true;
-  estado.formatoSujo = true;
-  linhaVista = posicao().linha;
   atualizarStatus();
-  agendar();
   agendarPersistir();
 });
 for (const evento of ["keyup", "click", "select"]) {
-  $("texto").addEventListener(evento, () => aposCursor(false));
+  $("texto").addEventListener(evento, () => atualizarStatus());
 }
-$("pareado").addEventListener("change", () => {
-  aplicarModoPareado();
-  persistir();
-  if (pareadoLigado()) {
-    pareado.ultimoIndice = indiceDoCursor();
-    aposMovimentoPareado();
-    $("texto").focus({ preventScroll: true });
-  }
-});
 $("texto").addEventListener("keydown", teclaPareada);
 for (const evento of ["click", "keyup", "change", "input"]) document.addEventListener(evento, sincronizarPareado);
 document.addEventListener("close", sincronizarPareado, true);
@@ -1537,7 +1265,7 @@ HTMLDialogElement.prototype.close = function fecharGuardandoSelecao(...argumento
 };
 for (const evento of ["keyup", "input"]) {
   $("texto").addEventListener(evento, () => {
-    if (pareadoLigado()) window.requestAnimationFrame(aposMovimentoPareado);
+    window.requestAnimationFrame(aposMovimentoPareado);
   });
 }
 // Mouse: clique posiciona, Shift+clique estende, arrastar seleciona, duplo clique pega a palavra.
@@ -1610,10 +1338,6 @@ window.addEventListener("mouseup", () => {
   if (arrasto.rolagem) window.cancelAnimationFrame(arrasto.rolagem);
   arrasto.rolagem = 0;
 });
-$("tinta").addEventListener("change", () => {
-  desenhar();
-  persistir();
-});
 $("codigo").addEventListener("change", () => {
   desenhar();
   persistir();
@@ -1651,48 +1375,10 @@ document.addEventListener("click", (evento) => {
   acao(botao.dataset.acao);
 });
 
-// Cada lado guarda a rolagem que o outro lhe deu; um evento com esse mesmo valor
-// é eco da sincronização e não volta a mexer no outro lado.
-$("vista").addEventListener("scroll", () => {
-  const raiz = $("vista");
-  if (Math.abs(raiz.scrollTop - estado.rolagemVista) < 1) return;
-  estado.rolagemVista = raiz.scrollTop;
-  window.cancelAnimationFrame(estado.quadro);
-  estado.quadro = window.requestAnimationFrame(() => {
-    desenharVista(raiz.scrollTop);
-    rolarTextoPelaVista();
-  });
-});
-
-// O editor não ocupa a coluna inteira e está sem barra: a roda do mouse em qualquer ponto do
-// lado esquerdo rola o editor (e a vista vai junto pelo evento de rolagem dele).
-document.querySelector(".miolo").addEventListener("wheel", (evento) => {
-  if (evento.target.closest(".painel") || evento.ctrlKey) return;
-  evento.preventDefault();
-  const area = $("texto");
-  const fator = evento.deltaMode === 1 ? alturaLinha() : evento.deltaMode === 2 ? area.clientHeight : 1;
-  area.scrollTop += evento.deltaY * fator;
-}, { passive: false });
-
-$("texto").addEventListener("scroll", () => {
-  const area = $("texto");
-  if (Math.abs(area.scrollTop - estado.rolagemTexto) < 1) return;
-  estado.rolagemTexto = area.scrollTop;
-  window.cancelAnimationFrame(estado.quadroTexto);
-  estado.quadroTexto = window.requestAnimationFrame(() => desenharVista());
-});
-
-$("vista").addEventListener("click", (evento) => {
-  const linha = evento.target.closest("[data-linha]");
-  if (!linha) return;
-  irPara(Number(linha.dataset.linha), 0);
-});
-
 $("arquivo").addEventListener("change", () => {
   const arquivo = $("arquivo").files[0];
   if (!arquivo) return;
   lerArquivo(arquivo).then((texto) => {
-    estado.formatoSujo = true;
     $("texto").value = texto;
     estado.nome = arquivo.name;
     estado.sujo = false;
