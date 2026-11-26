@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { formatar } from "./pagina.js";
 import { montarFaixas } from "./faixas.js";
-import { ESTILO, montarTinta, relatorioTinta } from "./tinta.js?edicao=1";
+import { ESTILO, montarTinta, parearGrifos, relatorioTinta } from "./tinta.js?edicao=1";
 import { conferirDocx, gerarDocx, lerDocx } from "./docx.js?edicao=1";
 
 const opcoes = {
@@ -37,7 +37,7 @@ const semTitulo = (linhas) => ["<T->", ...linhas];
   }
 }
 
-// 2. Códigos do BF viram o símbolo de tinta.
+// 2. Códigos do texto viram o símbolo de tinta.
 {
   const casos = [
     ["`(C`) Editora", "© Editora"],
@@ -47,7 +47,7 @@ const semTitulo = (linhas) => ["<T->", ...linhas];
     ["volta õ: e õ:o", "volta ← e ↔"],
     ["marque _y aqui", "marque □ aqui"],
     ["_y9: figura", "_y9: figura"],
-    ["item õo e <>", "item • e •"],
+    ["item õo e <>", "item ● e ●"],
     ["El ni~no ~Nandu", "El niño Ñandu"],
     ["D¬urkop", "Dürkop"],
     ["tinyurl.com`/2p#hbcfgk", "tinyurl.com/2p82367k"],
@@ -78,8 +78,8 @@ const semTitulo = (linhas) => ["<T->", ...linhas];
   }
   const nota = montarTinta(semTitulo(["Doubek `(**`) e (*glossário*)."]), opcoes);
   igual(textoDe(nota), "Doubek (**) e (glossário).", "nota (**) e grifo entre parênteses");
-  const solto = montarTinta(semTitulo([" é*  asterisco", "", "linha seguinte"]), opcoes);
-  igual(textoDe(solto).split("\n")[0].trim(), "é*  asterisco", "asterisco solto fica");
+  const solto = montarTinta(semTitulo([" o* é  asterisco", "", "linha seguinte"]), opcoes);
+  igual(textoDe(solto).split("\n")[0].trim(), "o* é  asterisco", "asterisco solto fica");
   if (grifado(solto)) falha("asterisco solto não pode grifar o resto", grifado(solto));
   if (!solto.avisos.some((aviso) => aviso.tipo === "grifo")) falha("asterisco solto deveria ir para o relatório", solto.avisos);
   const desenho = montarTinta(semTitulo(["<F->", "  * * *", " *   *", "<F+>"]), opcoes);
@@ -131,6 +131,62 @@ const semTitulo = (linhas) => ["<T->", ...linhas];
   for (const trecho of ['w:lineRule="exact"', '<w:widowControl w:val="0"/>', "<w:pageBreakBefore/>", "<w:i/>", "Verdana"]) {
     if (!documento.includes(trecho)) falha("docx sem", trecho);
   }
+}
+
+// 6b. Diagramação na tinta: centralizado, separador, sumário, grifo no <F->, códigos.
+{
+  const linhas = ["<T->", "          Centro", "::::::::::::::::::::::::::::::::::", "<F->", "Capítulo *um* ::::::: 12", "  * * *", "<F+>",
+    "Ni?ede e 2×3.", " é,  vírgula", " _`[ _`]  abre e fecha nota de", "  transcrição"];
+  const tinta = montarTinta(linhas, opcoes);
+  const todas = linhasDe(tinta);
+  const achar = (texto) => todas.find((linha) => linha.texto === texto) || falha("linha não encontrada", { texto, todas: todas.map((linha) => linha.texto) });
+  igual(achar("Centro").alinhar, "centro", "linha centralizada vira parágrafo centralizado");
+  igual(achar("—".repeat(17)).alinhar, null, "separador de ponta a ponta");
+  const sumario = achar("Capítulo um12");
+  if (!sumario.partes.some((parte) => parte.tab === "pontilhado")) falha("sumário sem pontilhado", sumario.partes);
+  if (!grifado(tinta).includes("um")) falha("grifo no <F->", grifado(tinta));
+  achar("  * * *");
+  achar("Niède e 2x3.");
+  achar(",  vírgula");
+  achar("(456 12356)  abre e fecha nota de");
+  achar("  (456 23456)  transcrição");
+  if (tinta.avisos.some((aviso) => aviso.tipo === "codigo" || aviso.tipo === "grifo")) falha("avisos que não deviam sair", tinta.avisos);
+  const bytes = gerarDocx(tinta);
+  const conferencia = conferirDocx(bytes, tinta);
+  if (!conferencia.ok) falha("conferência do docx diagramado", conferencia);
+  const documento = new TextDecoder().decode(bytes);
+  for (const trecho of ['<w:jc w:val="center"/>', 'w:leader="dot"']) if (!documento.includes(trecho)) falha("docx sem", trecho);
+}
+
+// 6c. Parte 2 do livro: aspas simples, marcador, grifo que atravessa a página, endereço.
+{
+  const linhas = ["<T->", 'com ý"eý" e o ý"ver a cidadeý"? Alexý”. A', "õo Para escrever", "• Canetinha",
+    "<R+>", "apresentação de *O segredo da", "arca de", "<R->", "<P>", "<R+>", "  Trancoso*, em Salvador", "<R->",
+    "", "em: http:`/`/www.fu~narte.gov.br e Pe~na", "          :wr:wr:wr:"];
+  const tinta = montarTinta(linhas, opcoes);
+  const texto = textoDe(tinta).replaceAll("\n", " ");
+  for (const esperado of ["com ‘e’ e o ‘ver a cidade’? Alex’. A", "● Para escrever", "● Canetinha", "http://www.funarte.gov.br e Peña"]) {
+    if (!texto.includes(esperado)) falha("parte 2", { esperado, texto });
+  }
+  if (!linhasDe(tinta).some((linha) => linha.texto === "—●—●—●—" && linha.alinhar === "centro")) falha("enfeite :wr:", texto);
+  if (!grifado(tinta).includes("O segredo da") || !grifado(tinta).includes("Trancoso")) falha("grifo atravessando a página", grifado(tinta));
+  if (texto.includes("*")) falha("asterisco do grifo sobrou", texto);
+}
+
+// 6d. Grifo duplo $*: o "$" some junto com o asterisco, e o par diz que é duplo.
+{
+  const tinta = montarTinta(["<T->", "um $*teste$* e *outro* aqui"], opcoes);
+  igual(textoDe(tinta), "um teste e outro aqui", "grifo duplo sem o $");
+  igual(grifado(tinta), "teste|outro", "grifo duplo e simples");
+  const { pares } = parearGrifos(["um $*teste$* e *outro*"]);
+  igual(pares.map((par) => `${par.duplo ? "$*" : "*"}${par.abre.de}-${par.fecha.ate}`).join(), "$*3-12,*15-22", "pares de grifo");
+}
+
+// 6e. "?*" (parênteses auxiliares vazios) não abre grifo.
+{
+  const { pares, avisos } = parearGrifos(["Edito?*ra Moderna e *grifo* aqui"]);
+  igual(pares.length, 1, "?* não é grifo");
+  igual(avisos.length, 0, "?* sem aviso");
 }
 
 // 7. O livro de exemplo, quando estiver na pasta de cima (não vai para o repositório).

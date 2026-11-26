@@ -1,15 +1,13 @@
-// Tabelas que o tradutor do Braille Fácil traz dentro do BrFacil.EXE (não estão nos .cfg).
-// Lidas direto do executável (seção DATA); os endereços são os do IDR.
+// Tabelas do tradutor que não estão em tabelas.js: dígitos rebaixados e a tabela da crase.
 
 // Dígitos rebaixados 0..9, usados em ordinais e frações.
-// Unificado: tabela em 4AA30C indexada pelo byte do dígito (0x4AA33C..0x4AA345).
+// Unificado, na ordem dos dígitos 0..9.
 export const REBAIXADO_UNIFICADO = "},;:/?!=\"*";
-// Antigo: tabela em 4AA300 (0x4AA330..0x4AA339).
+// Antigo, na ordem dos dígitos 0..9.
 export const REBAIXADO_ANTIGO = "},;:.?!){*";
 
-// Tabela de crase em 4AA348: 40 entradas de 46 bytes.
-// +0 chave (string[2]), +9 saída usada pelo unificado (sub_0047DB58), +0F descrição dos pontos.
-// O programa só aceita chave de 1 caractere; as de 2 ("¨(", "¨)", "!)") nunca casam.
+// Tabela da crase: 40 entradas [chave, saída no unificado].
+// Só vale chave de 1 caractere; as de 2 ("¨(", "¨)", "!)") nunca casam.
 // As entradas vazias têm chave #1 e saída vazia.
 export const CRASE_UNIFICADO = [
   ["+", "!"],

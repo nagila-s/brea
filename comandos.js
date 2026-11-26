@@ -1,6 +1,6 @@
-// Val do Delphi (@ValLong): espaços à esquerda, sinal, "$" para hexadecimal. Num erro devolve o
-// que já leu e a posição do caractere ruim (o original usa esse valor parcial).
-function valLong(texto) {
+// Lê um número: espaços à esquerda, sinal, "$" para hexadecimal. Num erro devolve o que já leu
+// e a posição do caractere ruim (quem chama usa esse valor parcial).
+function lerNumero(texto) {
   let i = 0;
   while (texto[i] === " ") i += 1;
   let sinal = 1;
@@ -33,12 +33,12 @@ function invalido(linha) {
   };
 }
 
-// 0049BC94, o intérprete de comandos do CompilaRascunho. Devolve null quando a linha é texto.
+// O intérprete de comandos. Devolve null quando a linha é texto.
 // Campos: fecha (esvazia o parágrafo em curso antes de agir), imprimir (a linha também sai
-// como texto) e aviso (mensagem que o original mostrava).
+// como texto) e aviso (mensagem para a pessoa).
 function classificar(linha) {
-  // 0049CADB: comando é a linha que começa com "<" na coluna 1 (o fim já vem aparado por
-  // 0049BBE0); com espaço antes, é texto. "<" sozinho também é texto.
+  // Comando é a linha que começa com "<" na coluna 1 (o fim já vem aparado); com espaço
+  // antes, é texto. "<" sozinho também é texto.
   const s = linha.trimEnd();
   if (!s.startsWith("<") || s.length === 1) return null;
   if (s.toUpperCase() === "<P>") return { tipo: "quebra", fecha: true, rotulo: "quebra de página" };
@@ -50,7 +50,7 @@ function classificar(linha) {
     if (par === "+>") return { tipo: "titulo", modo: "on", fecha: true, rotulo: "título de página" };
     if (s.length >= 5 && (s[2] === "+" || s[2] === "*") && /[0-9]/.test(s[3]) && s.endsWith(">")) {
       const bruto = s.slice(3, -1);
-      const lido = valLong(bruto);
+      const lido = lerNumero(bruto);
       let numero = lido.valor;
       let aviso = null;
       if (lido.erro || numero < 1 || numero > 10000) {
@@ -117,7 +117,7 @@ function classificar(linha) {
     // Sem ">" é texto. Com ">", o Val vale como página em tinta mesmo se falhar no meio
     // (fica o valor parcial), e nesse caso a linha também sai como texto.
     if (!s.endsWith(">")) return null;
-    const lido = valLong(s.slice(1, -1));
+    const lido = lerNumero(s.slice(1, -1));
     return {
       tipo: "transpaginacao",
       numero: String(lido.valor),
@@ -126,7 +126,7 @@ function classificar(linha) {
       rotulo: `página em tinta ${lido.valor}`,
     };
   }
-  // Qualquer outro caractere depois do "<": a linha é ignorada em silêncio (0049C642).
+  // Qualquer outro caractere depois do "<": a linha é ignorada em silêncio.
   // Inclui as anotações <*** ***> e as notas de configuração como <*34 caracteres x 28 linhas>.
   if (/^<\*{3}[\s\S]*\*{3}>$/.test(s)) return { ...COMENTARIO, tipo: "anotacao", rotulo: "anotação, não impressa" };
   return COMENTARIO;

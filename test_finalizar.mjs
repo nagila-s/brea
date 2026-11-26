@@ -1,7 +1,7 @@
 // Finalizar e Remover quebras (PLANO-EDITOR, etapa 8).
 import { existsSync, readFileSync } from "node:fs";
 import { formatar } from "./pagina.js?edicao=32";
-import { finalizarTexto, mesmoBraille, removerQuebras } from "./finalizar.js";
+import { finalizarTexto, mesmoBraille, paginasAntesDasQuebras, paginasEsvaziadas, removerQuebras } from "./finalizar.js";
 import { montarFaixas } from "./faixas.js";
 
 const base = { codigo: "unificado", matematica: false, maiuscula: true, maiusculaPalavra: true, numero: true };
@@ -109,4 +109,31 @@ if (existsSync(livro)) {
   }
 }
 
+console.log("ok");
+
+// Aviso de redistribuir: apagar quase toda a página antes de um <P> (ou fazer o texto passar
+// para uma página nova antes dele) deixa a página curta; o que já era curto não conta.
+{
+  const op = { ...base, colunasPadrao: 20, linhasPadrao: 6 };
+  const quebras = (texto) => paginasAntesDasQuebras(formatar(texto.split("\n"), op, false, { semVista: true }).estrutura);
+  const cheia = ["um", "dois", "tres", "quatro", "cinco"].map((p) => `  ${p}`).join("\n");
+  const original = `<T->\n${cheia}\n<P>\n  capitulo\n<P>\n${cheia}`;
+  const antes = quebras(original);
+  if (antes.length !== 2 || antes[0].usadas !== 5 || antes[0].cabem !== 6) falha("medida das páginas", antes);
+  // A página do capítulo (1 de 6 linhas) já era curta: não avisa.
+  if (paginasEsvaziadas(antes, antes).size) falha("página curta de antes", [...paginasEsvaziadas(antes, antes)]);
+  // Apagou quatro linhas da primeira página: ela ficou com uma.
+  const apagado = original.replace("  dois\n  tres\n  quatro\n", "");
+  const depois = quebras(apagado);
+  const curtas = paginasEsvaziadas(antes, depois);
+  if (curtas.size !== 1 || !curtas.has(0)) falha("página esvaziada", [...curtas]);
+  // Continua marcada enquanto curta; sai quando volta a encher.
+  if (!paginasEsvaziadas(depois, depois, curtas).has(0)) falha("aviso some sozinho", null);
+  if (paginasEsvaziadas(depois, antes, curtas).size) falha("aviso não sai ao encher", null);
+  // Texto a mais: a página passa do fim e sobram linhas numa página nova antes do <P>.
+  const crescido = original.replace("  cinco", "  cinco\n  seis\n  sete");
+  if (!paginasEsvaziadas(antes, quebras(crescido)).has(0)) falha("página nova curta antes do <P>", quebras(crescido));
+  // Mudou o número de <P>: recomeça sem aviso.
+  if (paginasEsvaziadas(antes, quebras(apagado.replace("<P>\n", ""))).size) falha("número de <P> mudou", null);
+}
 console.log("ok");

@@ -49,7 +49,8 @@ function converter(texto, mapa) {
 function centrarPorEspacos(linha) {
   const miolo = linha.trim();
   if (!miolo) return "";
-  return `${" ".repeat(12)}${miolo}`;
+  // 10 espaços: é a partir daí que o braille centraliza a linha.
+  return `${" ".repeat(10)}${miolo}`;
 }
 
 function centrarFisico(linha, colunas) {

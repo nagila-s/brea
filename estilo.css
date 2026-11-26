@@ -41,7 +41,16 @@ body {
 
 button, select, input { font: inherit; color: inherit; }
 
-.janela { background: var(--superficie); border-bottom: 1px solid var(--borda); }
+/* Cabeçalho: o logo e o nome ocupam as duas linhas (menu e ferramentas), à esquerda. */
+.janela {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  /* Menus, submenus e ferramentas 30% maiores que o resto da tela (14px). */
+  font-size: 18px;
+  background: var(--superficie);
+  border-bottom: 1px solid var(--borda);
+}
+.janela > .menu, .janela > .ferramentas { grid-column: 2; }
 
 .menu {
   display: flex;
@@ -52,6 +61,27 @@ button, select, input { font: inherit; color: inherit; }
 }
 
 .menu-item { position: relative; }
+
+/* Logo e nome no canto superior esquerdo, da altura das duas linhas. */
+.marca {
+  grid-row: 1 / span 2;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 16px 4px 12px;
+  border-right: 1px solid var(--borda);
+  user-select: none;
+}
+
+.marca img { display: block; width: 39px; height: 40px; }
+.ferramentas button.icone svg { width: 21px; height: 21px; }
+
+.marca-nome {
+  font-size: 29px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  color: #f4efe6;
+}
 
 .menu-item > button, .ferramentas button, .submenu button, .acoes-dialogo button {
   background: transparent;
@@ -92,24 +122,15 @@ button, select, input { font: inherit; color: inherit; }
 
 .submenu hr { border: 0; border-top: 1px solid var(--borda); margin: 4px 0; }
 
+/* Menu do botão direito no editor. */
+.menu-contexto { position: fixed; top: 0; left: 0; min-width: 190px; z-index: 20; color: var(--texto); font-family: "Segoe UI", sans-serif; font-size: 14px; }
+.menu-contexto button:disabled { color: var(--texto-suave); opacity: 0.5; cursor: default; }
+.menu-contexto button { display: flex; justify-content: space-between; gap: 24px; }
+.menu-contexto .atalho { color: var(--texto-suave); }
+
 .submenu .submenu { top: 0; left: 100%; }
 
-.cinco {
-  padding: 4px 10px 8px;
-  background: var(--superficie);
-  border-top: 1px solid var(--borda);
-  font-family: "Segoe UI Symbol", "Segoe UI", sans-serif;
-  font-size: 20px;
-  line-height: 1.35;
-}
-
-.perkins-mostra {
-  font-family: "Segoe UI Symbol", "Segoe UI", sans-serif;
-  font-size: 42px;
-  min-height: 48px;
-}
-
-.retoques, .tabela-grade { display: flex; flex-wrap: wrap; gap: 6px; }
+.tabela-grade { display: flex; flex-wrap: wrap; gap: 6px; }
 
 .tabela-grade button { min-width: 2.2em; }
 
@@ -121,17 +142,6 @@ dialog legend { color: var(--destaque); padding: 0 4px; }
 
 dialog label { display: flex; gap: 8px; align-items: center; margin: 4px 0; }
 
-/* Impressão: só a área montada na hora (app.js, imprimir), preto no branco. */
-.impressao { display: none; }
-@media print {
-  body[data-impressao] > :not(#impressao) { display: none !important; }
-  html:has(body[data-impressao]), body[data-impressao] { background: #fff !important; color: #000 !important; display: block; height: auto; }
-  .impressao:not([hidden]) { display: block; }
-  .impressao pre { margin: 0; white-space: pre-wrap; font-family: Consolas, "Cascadia Mono", monospace; font-size: 11pt; }
-  .impressao .folha-braille { font-family: "Segoe UI Symbol", "Segoe UI", sans-serif; font-size: 16pt; line-height: 1.25; white-space: pre; break-after: page; }
-  .impressao .folha-braille:last-child { break-after: auto; }
-}
-
 .ferramentas {
   display: flex;
   align-items: center;
@@ -142,7 +152,19 @@ dialog label { display: flex; gap: 8px; align-items: center; margin: 4px 0; }
   border-bottom: 1px solid var(--borda);
 }
 
-.ferramentas.segunda { background: var(--superficie-2); }
+/* Botões de ícone: alinhamento e grifo. */
+.ferramentas button.icone {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 36px;
+  padding: 3px 6px;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 20px;
+  line-height: 1;
+}
+.ferramentas button.icone-negrito { font-weight: 700; }
+.ferramentas button.icone-italico { font-style: italic; }
 
 .separa {
   width: 1px;
@@ -201,6 +223,22 @@ dialog label { display: flex; gap: 8px; align-items: center; margin: 4px 0; }
   color: var(--texto-suave);
   font-size: 13px;
 }
+
+/* Aviso de páginas a redistribuir: uma faixa acima das páginas, sem interromper a digitação. */
+.aviso-paginas {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 12px;
+  background: var(--superficie);
+  border-bottom: 2px solid var(--destaque);
+  color: var(--texto);
+  font-size: 13px;
+}
+.aviso-paginas[hidden] { display: none; }
+.aviso-paginas::before { content: "⚠"; color: var(--destaque); }
+.aviso-paginas .texto-aviso { flex: 1; }
+.aviso-paginas button { padding: 2px 10px; }
 
 .grupo {
   display: flex;
@@ -306,7 +344,9 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--destaque); }
 .pareada {
   flex: 1;
   overflow: auto;
-  padding: 12px 16px 40vh;
+  overflow-x: hidden;
+  /* Sem recuo dos lados: a divisão entre tinta e braille fica no meio da tela. */
+  padding: 12px 0 40vh;
   /* Segue a fonte escolhida em Configurar > Fonte na tela (padrão 22). */
   --fonte: 22px;
   --altura-faixa: calc(var(--fonte) * 1.36);
@@ -315,10 +355,10 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--destaque); }
 
 .faixa {
   display: grid;
-  /* 1ch medido na fonte da tinta (Consolas 20px): a coluna cabe a largura braille inteira. */
   font-family: Consolas, "Cascadia Mono", monospace;
   font-size: calc(var(--fonte) * 0.91);
-  grid-template-columns: 22px calc(var(--colunas, 34) * 1ch + 24px) auto;
+  /* Metade da tela para cada lado: a tinta (com as barras das marcações) e o braille. */
+  grid-template-columns: 22px calc(50% - 22px) 50%;
   align-items: center;
   height: var(--altura-faixa);
   white-space: pre;
@@ -330,11 +370,18 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--destaque); }
 .lado-tinta {
   padding: 0 12px 0 6px;
   overflow: hidden;
+  /* Ocupa a altura toda da faixa, mesmo sem texto: numa linha vazia, o cursor e o destaque da
+     linha atual também aparecem (antes o lado encolhia para altura zero). */
+  align-self: stretch;
+  display: flex;
+  align-items: center;
 }
 
 .lado-braille {
   font-family: "Segoe UI Symbol", "Segoe UI", sans-serif;
-  font-size: var(--fonte);
+  /* --fonte-braille: o maior que cabe na metade e na altura da linha (app.js, tamanhoDoBraille). */
+  font-size: var(--fonte-braille, var(--fonte));
+  overflow: hidden;
   padding-left: 14px;
   border-left: 1px solid var(--papel-borda);
   align-self: stretch;
@@ -343,6 +390,12 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--destaque); }
 }
 
 .faixa .escape { color: #9a9a9a; }
+
+/* Grifo: o asterisco (e o "$" do grifo duplo) mais claro, o texto em negrito; no grifo duplo,
+   negrito e itálico. A fonte é monoespaçada, então a coluna do cursor não muda. */
+.faixa .grifo-marca { color: #a3a3a3; }
+.faixa .grifo { font-weight: 700; }
+.faixa .grifo-duplo { font-style: italic; }
 
 /* O fundo da marcação fica atrás da tinta; o braille continua limpo. */
 .faixa.marcada .lado-tinta { background: var(--fundo-marca); align-self: stretch; display: flex; align-items: center; }
@@ -360,20 +413,79 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--destaque); }
 
 .faixa-nota { color: var(--papel-aviso); }
 
+/* Linha de comando (<R+>, <T título>...): como está no texto, só na tinta, em cinza. */
+.faixa-comando .lado-tinta { color: var(--papel-suave); }
+
 /* Possível parágrafo partido pelo Finalizar dentro do recuo (faixas.js, corteNoRecuo). */
 .faixa.corte-recuo .lado-tinta { box-shadow: inset 3px 0 0 var(--papel-aviso); }
 
+/* A quebra de página não ocupa linha (como no braille): é um traço colado entre a última linha
+   da página e o cabeçalho da seguinte, com o rótulo em cima do traço. */
 .faixa-quebra {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  height: 22px;
+  display: block;
+  position: relative;
+  z-index: 2;
+  height: 0;
   color: var(--papel-suave);
-  font-size: 12px;
+  font-size: 11px;
 }
-.faixa-quebra::before, .faixa-quebra::after { content: ""; flex: 1; border-top: 2px solid var(--papel-texto); }
-.faixa-quebra::before { flex: 0 0 22px; }
-.faixa-quebra.automatica::before, .faixa-quebra.automatica::after { border-top: 2px dashed var(--papel-suave); }
+.faixa-quebra .rotulo-quebra {
+  position: absolute;
+  left: 30px;
+  top: 0;
+  transform: translateY(-50%);
+  padding: 0 6px;
+  line-height: 14px;
+  background: var(--papel);
+  white-space: nowrap;
+}
+.faixa-quebra::before { content: ""; position: absolute; left: 22px; right: 0; top: -1px; border-top: 2px solid var(--papel-texto); }
+.faixa-quebra.automatica::before { border-top: 2px dashed var(--papel-suave); }
+
+/* Comandos e comentários fechados: não ocupam linha (como no braille). Viram uma etiqueta na
+   divisa entre a linha de cima e a de baixo, no fim da metade da tinta; clicar abre a linha. */
+.faixa-fechada { display: block; position: relative; z-index: 3; height: 0; }
+.faixa-fechada .etiquetas {
+  position: absolute;
+  top: 0;
+  right: calc(50% + 8px);
+  transform: translateY(-50%);
+  display: flex;
+  gap: 4px;
+  max-width: calc(50% - 40px);
+}
+.etiqueta {
+  padding: 0 5px;
+  font: 11px/14px "Segoe UI", sans-serif;
+  color: var(--papel-suave);
+  background: var(--papel);
+  border: 1px solid var(--papel-borda);
+  border-radius: 3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+  cursor: grab;
+}
+.etiqueta:hover { color: var(--papel-texto); border-color: var(--papel-suave); }
+.faixa-quebra.forcada .rotulo-quebra, .faixa-quebra[data-linha] .rotulo-quebra { cursor: grab; }
+
+/* Arrastar um código: a linha amarela mostra onde ele vai cair. */
+.pareada.arrastando-codigo, .pareada.arrastando-codigo * { cursor: grabbing !important; }
+.destino-codigo {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 0;
+  border-top: 3px solid var(--destaque);
+  margin-top: -1px;
+  z-index: 6;
+  pointer-events: none;
+}
+
+/* Código aberto pelo duplo clique: a linha dele na página, com moldura, enquanto é editado. */
+.faixa.codigo-aberto .lado-tinta { outline: 1px dashed var(--papel-suave); outline-offset: -2px; color: var(--papel-texto); }
+.etiqueta-comentario { font-style: italic; background: var(--comentario); }
 
 .faixa.atual .lado-tinta, .faixa.atual .lado-braille { box-shadow: inset 0 -3px 0 var(--papel-marca); }
 
@@ -416,7 +528,7 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--destaque); }
 .sel-braille { left: calc(14px + var(--de) * var(--cela, 22px)); width: calc(var(--n) * var(--cela, 22px)); }
 .pareada.com-selecao .cursor-pareado { opacity: 0.6; }
 
-/* Relatório da Tinta no Word */
+/* Relatório da versão tinta */
 #tinta-dialogo { max-width: 760px; width: 90vw; }
 #tinta-relatorio {
   max-height: 50vh;
@@ -428,3 +540,10 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--destaque); }
   font-size: 12px;
   white-space: pre-wrap;
 }
+
+/* Escolha única num menu (Configurar > Codificação): a escolhida leva o sinal. */
+.submenu button[role="menuitemradio"]::before { content: "✓"; display: inline-block; width: 1.2em; visibility: hidden; }
+.submenu button[role="menuitemradio"][aria-checked="true"]::before { visibility: visible; color: var(--destaque); }
+/* Item que abre outro menu (Inserir, Codificação, Separador...): seta à direita. */
+.submenu .menu-item > button { display: flex; justify-content: space-between; gap: 18px; width: 100%; }
+.submenu .menu-item > button::after { content: "›"; color: var(--texto-suave); }

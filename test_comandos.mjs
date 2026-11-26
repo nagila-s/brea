@@ -49,7 +49,7 @@ const doc = preparar([
   "tabela",
   "<267>",
 ]);
-// 0049BEDB: o título vai do 3º caractere ao fim, sem o ">" e sem aparar.
+// O título vai do 3º caractere ao fim, sem o ">" e sem aparar.
 if (doc[5].titulo !== " fil vol 5" || doc[5].recuo !== true || doc[5].colunas != null) {
   throw new Error(`estado do texto: ${JSON.stringify(doc[5])}`);
 }
@@ -58,7 +58,7 @@ if (doc[7].ajuste !== false) throw new Error("F- não desligou o auto-ajuste");
 if (doc[8].comando.numero !== "267" || doc[8].paginaTinta !== "267") throw new Error("transpaginação");
 if (!classificar("<t*4>").romano || classificar("<t+4>").romano) throw new Error("T* / T+");
 if (!resumo(doc[5]).includes("título “fil vol 5”")) throw new Error(resumo(doc[5]));
-// Detecção como em 0049BC94.
+// Detecção dos comandos.
 const det = (linha) => classificar(linha);
 if (det("<P> x").tipo !== "comentario" || det("<p>").tipo !== "quebra") throw new Error("<P> exato");
 if (det("<TTitulo>").texto !== "Titulo" || det("<T>").texto !== "" || det("<Texto").texto !== "exto") throw new Error("título");

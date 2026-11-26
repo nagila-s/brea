@@ -5,9 +5,9 @@
 // paginação que o editor mostra. O braille depois de finalizar tem de ser idêntico ao de
 // antes; quem chama confere com `mesmoBraille`.
 
-import { classificar, preparar } from "./comandos.js?edicao=26";
-import { formatar } from "./pagina.js?edicao=32";
-import { traduzir } from "./motor.js?edicao=26";
+import { classificar, preparar } from "./comandos.js?edicao=27";
+import { formatar } from "./pagina.js?edicao=34";
+import { traduzir } from "./motor.js?edicao=28";
 
 // Onde, no texto, começa uma página: a linha e a coluna da primeira letra que foi para ela.
 function inicioDaPagina(pagina) {
@@ -28,7 +28,7 @@ function inicioDaPagina(pagina) {
 function continuacao(texto, recuo) {
   let linha = texto;
   // "<" ou "•" no começo mudariam o sentido da linha (comando, parágrafo novo); o "`" é o
-  // escape do Braille Fácil: aparece na tinta e não vira cela.
+  // caractere de escape: aparece na tinta e não vira cela.
   if (linha.startsWith("<") || linha.startsWith("•")) linha = `\`${linha}`;
   return recuo ? `  ${linha}` : linha;
 }
@@ -122,4 +122,34 @@ function mesmoBraille(linhasA, linhasB, opcoes) {
   return { igual: true };
 }
 
-export { contarQuebras, finalizarTexto, mesmoBraille, removerQuebras };
+// Aviso de redistribuir. Os <P> gravados não se movem sozinhos: apagar muito texto deixa a
+// página antes do <P> quase vazia, e acrescentar texto faz sobrar umas poucas linhas numa página
+// nova antes dele. Para cada <P> do texto (em ordem), a página que ele fecha e quanto ela ocupa.
+function paginasAntesDasQuebras(estrutura) {
+  const resultado = [];
+  for (let i = 1; i < estrutura.length; i += 1) {
+    if (estrutura[i].motivo !== "forcada") continue;
+    const pagina = estrutura[i - 1];
+    const cabem = Math.max(1, pagina.linhasPagina - (pagina.titula ? 1 : 0));
+    resultado.push({ pagina: i - 1, usadas: pagina.corpo.length, cabem });
+  }
+  return resultado;
+}
+
+// Página com menos da metade das linhas ocupadas.
+const paginaCurta = (pagina) => pagina.usadas * 2 < pagina.cabem;
+
+// Os <P> (pela ordem no texto) cuja página ficou curta com as edições: as que já estavam
+// marcadas e continuam curtas, mais as que eram cheias em `antes` e agora são curtas. Páginas
+// que já eram curtas (fim de capítulo, capa) não entram. Se o número de <P> mudou, a ordem
+// não vale mais: recomeça sem nenhuma.
+function paginasEsvaziadas(antes, depois, marcadas = new Set()) {
+  const novas = new Set();
+  if (!antes || antes.length !== depois.length) return novas;
+  depois.forEach((pagina, k) => {
+    if (paginaCurta(pagina) && (marcadas.has(k) || !paginaCurta(antes[k]))) novas.add(k);
+  });
+  return novas;
+}
+
+export { contarQuebras, finalizarTexto, mesmoBraille, paginasAntesDasQuebras, paginasEsvaziadas, removerQuebras };

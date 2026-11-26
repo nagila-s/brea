@@ -1,7 +1,7 @@
 // Vista pareada (etapa 2, só leitura): cada faixa vira uma linha com a tinta à esquerda e o
 // braille à direita. As duas metades são a mesma linha do DOM, então rolam juntas sempre.
 
-import { unicodeDaCela } from "./motor.js?edicao=26";
+import { unicodeDaCela } from "./motor.js?edicao=28";
 
 const NOMES_MARCAS = {
   "R+": "R+ recuo de dois",
@@ -17,19 +17,41 @@ function brailleDe(celas) {
   return celas.map((cela) => (cela.tipo === "espaco" ? "⠀" : unicodeDaCela(cela.dots))).join("");
 }
 
-// O "`" é o caractere de escape do Braille Fácil: aparece na tinta, mas não vira cela.
-function tintaComEscapes(texto) {
-  const fragmento = document.createDocumentFragment();
+// O "`" é o caractere de escape: aparece na tinta, mas não vira cela.
+function tintaComEscapes(texto, destino = document.createDocumentFragment()) {
   const partes = texto.split("`");
   partes.forEach((parte, indice) => {
     if (indice > 0) {
       const escape = document.createElement("span");
       escape.className = "escape";
       escape.textContent = "`";
-      fragmento.append(escape);
+      destino.append(escape);
     }
-    if (parte) fragmento.append(parte);
+    if (parte) destino.append(parte);
   });
+  return destino;
+}
+
+// Grifo (app.js, marcarGrifos): `estilos` tem um código por coluna da tinta.
+const CLASSE_GRIFO = [null, "grifo-marca", "grifo", "grifo grifo-duplo"];
+
+function tintaComGrifo(texto, estilos) {
+  if (!estilos) return tintaComEscapes(texto);
+  const fragmento = document.createDocumentFragment();
+  let inicio = 0;
+  for (let coluna = 1; coluna <= texto.length; coluna += 1) {
+    if (coluna < texto.length && estilos[coluna] === estilos[inicio]) continue;
+    const pedaco = texto.slice(inicio, coluna);
+    const classe = CLASSE_GRIFO[estilos[inicio]];
+    if (classe) {
+      const span = document.createElement("span");
+      span.className = classe;
+      fragmento.append(tintaComEscapes(pedaco, span));
+    } else {
+      tintaComEscapes(pedaco, fragmento);
+    }
+    inicio = coluna;
+  }
   return fragmento;
 }
 
@@ -38,6 +60,28 @@ function rotuloQuebra(faixa) {
   if (faixa.motivo === "titulo") return "nova numeração";
   if (faixa.motivo === "medida") return "nova medida de página";
   return "quebra automática";
+}
+
+// Comandos e comentários não ocupam linha no braille: fechados, viram uma etiqueta na divisa
+// entre a linha de cima e a de baixo. Comandos seguidos dividem a mesma etiqueta (o primeiro
+// desenha todos). `fechadas` são as faixas da etiqueta; [] nas outras do grupo.
+function etiquetaDasFaixas(fechadas, indices) {
+  const linha = document.createElement("div");
+  linha.className = "faixa faixa-fechada";
+  if (!fechadas.length) return linha;
+  const etiquetas = document.createElement("span");
+  etiquetas.className = "etiquetas";
+  fechadas.forEach((faixa, k) => {
+    const etiqueta = document.createElement("span");
+    etiqueta.className = `etiqueta etiqueta-${faixa.tipo}`;
+    etiqueta.dataset.alvo = String(indices[k]);
+    etiqueta.textContent = (faixa.tinta || "").trim();
+    const nome = faixa.tipo === "comentario" ? "comentário: não vai para o braille" : faixa.rotulo || "código";
+    etiqueta.title = `${nome}\nDuplo clique para abrir e editar`;
+    etiquetas.append(etiqueta);
+  });
+  linha.append(etiquetas);
+  return linha;
 }
 
 function linhaDaFaixa(faixa) {
@@ -56,7 +100,7 @@ function linhaDaFaixa(faixa) {
     rotulo.className = "rotulo-quebra";
     rotulo.textContent = rotuloQuebra(faixa);
     linha.append(rotulo);
-    linha.title = rotuloQuebra(faixa);
+    linha.title = faixa.linha != null ? `${rotuloQuebra(faixa)}\nDuplo clique para abrir e editar` : rotuloQuebra(faixa);
     return linha;
   }
 
@@ -78,7 +122,7 @@ function linhaDaFaixa(faixa) {
 
   const tinta = document.createElement("span");
   tinta.className = "lado-tinta";
-  tinta.append(tintaComEscapes(faixa.tinta || ""));
+  tinta.append(tintaComGrifo(faixa.tinta || "", faixa.estilos));
 
   const braille = document.createElement("span");
   braille.className = "lado-braille";
@@ -109,7 +153,7 @@ function assinaturaDoBraille(celas) {
 
 function assinatura(faixa) {
   const braille = faixa.braille ? assinaturaDoBraille(faixa.braille) : "";
-  return `${faixa.tipo}|${faixa.corteRecuo ? 1 : 0}|${faixa.forcada ? 1 : 0}|${faixa.motivo ?? ""}|${(faixa.marcas || []).join(",")}|${faixa.tinta ?? ""}|${braille}`;
+  return `${faixa.tipo}|${faixa.corteRecuo ? 1 : 0}|${faixa.forcada ? 1 : 0}|${faixa.motivo ?? ""}|${(faixa.marcas || []).join(",")}|${faixa.tinta ?? ""}|${faixa.estiloChave ?? ""}|${braille}`;
 }
 
 // Janela virtual: o livro pode ter milhares de faixas, mas só as que estão perto da tela
@@ -136,11 +180,43 @@ function criarJanela(raiz, { aoDesenhar } = {}) {
     ate: 0,
     elementos: new Map(),
     sujo: true,
+    aberta: null,
   };
 
-  function altura(faixa) {
-    if (!faixa || faixa.tipo === "comando" || faixa.tipo === "oculta") return 0;
-    return faixa.tipo === "quebra" ? janela.alturas.quebra : janela.alturas.faixa;
+  // Linhas de comando e linhas que o braille omite também ocupam uma linha (só de tinta): sem
+  // isso não dava para escrever um comando, que sumia ao ser digitado.
+  // Comandos e comentários fecham-se numa etiqueta, sem ocupar linha, como no braille; o que
+  // tem o cursor (`aberta`) se abre para ser editado. A quebra de página também não ocupa linha:
+  // é um traço colado entre a última linha da página e o cabeçalho da seguinte.
+  function fechavel(faixa) {
+    return faixa?.tipo === "comando" || faixa?.tipo === "comentario";
+  }
+
+  // O que o duplo clique abre: os códigos fechados e a quebra que vem de um código (<P>, <T+n>).
+  function abrivel(faixa) {
+    return fechavel(faixa) || (faixa?.tipo === "quebra" && faixa.linha != null);
+  }
+
+  function altura(faixa, indice) {
+    if (!faixa) return 0;
+    if (faixa.tipo === "quebra") return indice === janela.aberta ? janela.alturas.faixa : 0;
+    if (fechavel(faixa) && indice !== janela.aberta) return 0;
+    return janela.alturas.faixa;
+  }
+
+  // Desenhada mesmo sem altura: a quebra (o traço) e o começo de um grupo de etiquetas.
+  function desenhavel(faixa, indice) {
+    return altura(faixa, indice) > 0 || faixa?.tipo === "quebra" || (fechavel(faixa) && indice !== janela.aberta);
+  }
+
+  // Grupos de comandos fechados seguidos: o primeiro desenha a etiqueta de todos.
+  function grupoDe(indice) {
+    if (!fechavel(janela.faixas[indice]) || indice === janela.aberta) return null;
+    const anterior = indice - 1;
+    if (anterior >= 0 && fechavel(janela.faixas[anterior]) && anterior !== janela.aberta) return { primeiro: false, indices: [] };
+    const indices = [];
+    for (let i = indice; i < janela.faixas.length && fechavel(janela.faixas[i]) && i !== janela.aberta; i += 1) indices.push(i);
+    return { primeiro: true, indices };
   }
 
   // Lidas do CSS só quando a fonte muda; digitar não pede nenhuma medida ao navegador.
@@ -158,7 +234,7 @@ function criarJanela(raiz, { aoDesenhar } = {}) {
 
   function calcularTopos() {
     const topos = new Float64Array(janela.faixas.length + 1);
-    for (let i = 0; i < janela.faixas.length; i += 1) topos[i + 1] = topos[i] + altura(janela.faixas[i]);
+    for (let i = 0; i < janela.faixas.length; i += 1) topos[i + 1] = topos[i] + altura(janela.faixas[i], i);
     janela.topos = topos;
     trilho.style.height = `${topos[janela.faixas.length]}px`;
   }
@@ -214,13 +290,27 @@ function criarJanela(raiz, { aoDesenhar } = {}) {
     const ordem = [];
     for (let i = de; i < ate; i += 1) {
       const faixa = janela.faixas[i];
-      if (!altura(faixa)) continue;
-      const chave = assinatura(faixa);
+      if (!desenhavel(faixa, i)) continue;
+      const grupo = grupoDe(i);
+      // Os outros comandos do grupo já estão na etiqueta do primeiro.
+      if (grupo && !grupo.primeiro) continue;
+      const fechadas = grupo ? grupo.indices.map((k) => janela.faixas[k]) : null;
+      const aberta = i === janela.aberta;
+      let chave = grupo ? `fechada|${fechadas.map((f) => `${f.tipo}:${f.tinta}`).join("\u0001")}` : assinatura(faixa);
+      if (aberta) chave = `aberta|${chave}`;
       let elemento = sobras.get(chave)?.shift();
       if (!elemento) {
-        elemento = linhaDaFaixa(faixa);
+        if (grupo) elemento = etiquetaDasFaixas(fechadas, grupo.indices);
+        else if (aberta) {
+          // Código aberto pelo duplo clique: a linha dele, na própria página, para editar. O <P>
+          // aberto também vira uma linha com o texto do código.
+          elemento = linhaDaFaixa(faixa.tipo === "quebra" ? { ...faixa, tipo: "comando" } : faixa);
+          elemento.classList.add("codigo-aberto");
+        } else elemento = linhaDaFaixa(faixa);
         elemento.assinatura = chave;
       }
+      // As etiquetas apontam para as linhas do texto, que mudam de índice quando o texto muda.
+      if (grupo) elemento.querySelectorAll(".etiqueta").forEach((etiqueta, k) => { etiqueta.dataset.alvo = String(grupo.indices[k]); });
       acertarDados(elemento, faixa, i);
       elementos.set(i, elemento);
       ordem.push(elemento);
@@ -246,6 +336,8 @@ function criarJanela(raiz, { aoDesenhar } = {}) {
     // Troca a lista de faixas (depois de cada edição).
     definir(faixas, colunas) {
       janela.faixas = faixas;
+      // A linha aberta é a do cursor; quem chama abre de novo depois de remontar.
+      if (janela.aberta != null && !abrivel(faixas[janela.aberta])) janela.aberta = null;
       janela.colunas = colunas;
       raiz.style.setProperty("--colunas", String(colunas));
       calcularTopos();
@@ -257,12 +349,22 @@ function criarJanela(raiz, { aoDesenhar } = {}) {
       calcularTopos();
       janela.sujo = true;
     },
+    // Abre a linha de um código (a do cursor) e fecha a que estava aberta. O cursor só chega a
+    // um código pelo duplo clique ou escrevendo um novo. Devolve true quando mudou alguma coisa.
+    abrir(indice) {
+      const nova = abrivel(janela.faixas[indice]) ? indice : null;
+      if (nova === janela.aberta) return false;
+      janela.aberta = nova;
+      calcularTopos();
+      janela.sujo = true;
+      return true;
+    },
     desenhar,
     elemento: (indice) => janela.elementos.get(indice) || null,
     elementos: () => janela.elementos,
     topo: (indice) => janela.inicio + janela.topos[indice],
     visivel: () => janela.visivel,
-    altura: (indice) => altura(janela.faixas[indice]),
+    altura: (indice) => altura(janela.faixas[indice], indice),
     alturaFaixa: () => janela.alturas.faixa,
   };
 }

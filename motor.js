@@ -1,22 +1,20 @@
-// Tradutor do Braille Fácil, refeito a partir do executável (IDR).
-// Etapas, como no original:
-// 1. Cada linha passa pelo tradutor de contexto: _Unit67 (código unificado, 0047DDA4)
-//    ou _Unit68 (código antigo, 0047C868). Ele gera um "texto intermediário": sinais de
-//    maiúscula e de número, ordinais, frações, substituições como % -> _} ou § -> ss.
-// 2. Cada byte desse texto passa pela tabela ambcode/ambcode2 (004A1354). A tabela começa
-//    como identidade e o .cfg sobrescreve, então byte sem entrada vai como ele mesmo.
-// 3. O byte resultante (meta) vira 6 pontos pelo brailex.
-// A expansão CODMAT por crase (`token, com a opção "matemática") não é do tradutor original:
-// lá é uma macro do editor (brmacro 00487EC0). Ela continua aqui como antes, escrita no
-// alfabeto do ambcode antigo.
+// Tradutor de texto para braille. Etapas:
+// 1. Cada linha passa pelo tradutor de contexto (um para o código unificado, outro para o
+//    antigo). Ele gera um "texto intermediário": sinais de maiúscula e de número, ordinais,
+//    frações, substituições como % -> _} ou § -> ss.
+// 2. Cada byte desse texto passa pela tabela de conversão do código (tabelas.js). A tabela
+//    começa como identidade e as entradas sobrescrevem, então byte sem entrada vai como ele mesmo.
+// 3. O byte resultante (meta) vira 6 pontos pela tabela de pontos.
+// As regras de matemática por crase (`token, com a opção "matemática") são escritas no
+// alfabeto da tabela do código antigo.
 //
 // Campos de cada cela:
-//   meta      byte depois da tabela (o que o original grava no arquivo; 0x20 = espaço)
-//   metaTexto byte do texto intermediário, antes da tabela (o original quebra linha e
-//             separa sílabas sobre este texto)
+//   meta      byte depois da tabela (o que vai para o arquivo braille; 0x20 = espaço)
+//   metaTexto byte do texto intermediário, antes da tabela (a quebra de linha e a separação
+//             de sílabas olham este texto)
 
 import { tabelas } from "./tabelas.js";
-import { CRASE_UNIFICADO, REBAIXADO_ANTIGO, REBAIXADO_UNIFICADO } from "./tabelas_exe.js";
+import { CRASE_UNIFICADO, REBAIXADO_ANTIGO, REBAIXADO_UNIFICADO } from "./tabelas_extras.js";
 
 const SINAL_MAIUSCULA = "000101";
 const SINAL_NUMERO = "001111";
@@ -38,7 +36,7 @@ function byteDe(caractere) {
   return byte == null ? null : byte;
 }
 
-// 004A1354: zera a tabela como identidade e aplica as linhas do .cfg.
+// Começa a tabela como identidade e aplica as entradas de tabelas.js.
 function montarTabela(mapa) {
   const tabela = Array.from({ length: 256 }, (_, byte) => byte);
   for (const [caractere, meta] of Object.entries(mapa)) {
@@ -105,7 +103,7 @@ function pontosValidos(dots) {
   return typeof dots === "string" && /^[01]{6}$/.test(dots);
 }
 
-// Um caractere do texto intermediário vira uma cela pela tabela e pelo brailex.
+// Um caractere do texto intermediário vira uma cela pela tabela de conversão e pela de pontos.
 function celaDe(caractere, tabela, tipo = "corpo") {
   const byte = byteDe(caractere);
   if (byte == null) {
@@ -164,7 +162,7 @@ function emitirMatematica(regra, correcoes) {
       cortada: false,
     }));
   }
-  // CODMAT escreve a substituição no alfabeto do ambcode antigo.
+  // As regras de matemática escrevem a substituição no alfabeto da tabela do código antigo.
   return [...regra.saida].map((caractere) => {
     const cela = celaDe(caractere, TABELA.antigo, "matematica");
     cela.origem = regra.token;
@@ -173,13 +171,12 @@ function emitirMatematica(regra, correcoes) {
 }
 
 const ehDigito = (byte) => byte != null && byte >= 0x30 && byte <= 0x39;
-// Conjuntos 4A9FC8 (minúsculas) e 4A9FA8 (maiúsculas) do executável.
+// Minúsculas e maiúsculas, com as acentuadas do cp1252.
 const ehMinuscula = (byte) => byte != null && ((byte >= 0x61 && byte <= 0x7a) || byte >= 0xe0);
 const ehMaiuscula = (byte) => byte != null && ((byte >= 0x41 && byte <= 0x5a) || (byte >= 0xc0 && byte <= 0xdf));
-// 004A1598
 const paraMinuscula = (byte) => (ehMaiuscula(byte) ? byte + 0x20 : byte);
 
-const CRASE_67 = new Map(CRASE_UNIFICADO.filter(([chave]) => chave.length === 1));
+const CRASE_UNIFICADA = new Map(CRASE_UNIFICADO.filter(([chave]) => chave.length === 1));
 
 // Tradutor de contexto de uma linha. Devolve tokens:
 // { de, ate (índices em `car`), texto (intermediário), sinais: [{texto, tipo}], regra? }
@@ -202,7 +199,7 @@ function traduzirLinha(car, opc, estado) {
   };
 
   function minusculas() {
-    // 0047D054 / 0047C2B4: copia enquanto for minúscula ou hífen.
+    // Copia enquanto for minúscula ou hífen.
     do {
       emitir(i, i + 1, car[i]);
       i += 1;
@@ -210,7 +207,7 @@ function traduzirLinha(car, opc, estado) {
   }
 
   function maiusculas() {
-    // 0047D124 / 0047C384.
+    // Sinal de maiúscula (duplo quando a palavra inteira é maiúscula).
     const marca = unificado ? (ingles ? "\\" : "{") : ingles ? "&" : "]";
     if (!opc.maiuscula) {
       emitir(i, i + 1, car[i]);
@@ -233,7 +230,7 @@ function traduzirLinha(car, opc, estado) {
     i += 1;
   }
 
-  // 0047CA30 / 0047BD50
+  // Ordinal: # + dígitos rebaixados + a/o.
   function ordinal(rebaixado) {
     let j = i;
     while (j < n && ehDigito(b[j])) j += 1;
@@ -265,7 +262,7 @@ function traduzirLinha(car, opc, estado) {
     return true;
   }
 
-  // 0047CCF0: ponto dentro de número no unificado.
+  // Ponto dentro de número no unificado.
   function pontoNumeroUnificado() {
     if (i === n - 1 || !ehDigito(b[i + 1])) {
       emitir(i, i + 1, ".");
@@ -279,7 +276,7 @@ function traduzirLinha(car, opc, estado) {
     if (antes < 3 && depois < 3) sinalNumero();
   }
 
-  // 0047CDEC
+  // Número no unificado.
   function numeroUnificado() {
     sinalNumero();
     if (ordinal(REBAIXADO_UNIFICADO)) return;
@@ -297,7 +294,7 @@ function traduzirLinha(car, opc, estado) {
     }
   }
 
-  // 0047BB44: data com duas barras, só no antigo.
+  // Data com duas barras, só no antigo.
   function data() {
     let j = i;
     let barras = 0;
@@ -311,7 +308,7 @@ function traduzirLinha(car, opc, estado) {
     return true;
   }
 
-  // 0047BC58: hora, só no antigo.
+  // Hora, só no antigo.
   function hora() {
     let j = i;
     while (j < n && ehDigito(b[j])) j += 1;
@@ -322,7 +319,7 @@ function traduzirLinha(car, opc, estado) {
     return true;
   }
 
-  // 0047C018
+  // Número no antigo.
   function numeroAntigo() {
     sinalNumero();
     if (data() || hora() || ordinal(REBAIXADO_ANTIGO)) return;
@@ -336,7 +333,7 @@ function traduzirLinha(car, opc, estado) {
     }
   }
 
-  // 0047CF58 / 0047C1B8: `N/D -> # + N rebaixado + D.
+  // Fração: `N/D -> # + N rebaixado + D.
   function fracao(rebaixado) {
     sinalNumero();
     const crase = i;
@@ -359,7 +356,7 @@ function traduzirLinha(car, opc, estado) {
     }
   }
 
-  // 0047D3E0: substituições do unificado.
+  // Substituições do unificado.
   function substituirUnificado(de = i) {
     const x = b[i];
     let saida = car[i];
@@ -398,7 +395,7 @@ function traduzirLinha(car, opc, estado) {
     i += 1;
   }
 
-  // 0047C620: substituições do antigo.
+  // Substituições do antigo.
   function substituirAntigo() {
     const x = b[i];
     let saida = car[i];
@@ -427,7 +424,7 @@ function traduzirLinha(car, opc, estado) {
       else if (ehMaiuscula(x) && x !== 0xd7 && x !== 0xdf) maiusculas();
       else if (ehDigito(x)) numeroUnificado();
       else if (i + 1 < n && (x === 0x28 || x === 0x5b) && ehDigito(b[i + 1])) {
-        // 0047DC18: parêntese/colchete de expressão numérica.
+        // Parêntese/colchete de expressão numérica.
         estado.parentese = 0;
         const fecha = x === 0x5b ? "]" : ")";
         const resto = car.slice(i + 1, i + 1 + 999);
@@ -440,26 +437,26 @@ function traduzirLinha(car, opc, estado) {
           substituirUnificado();
         }
       } else if (estado.parentese === 0 && i > 0 && (x === 0x29 || x === 0x5d) && ehDigito(b[i - 1])) {
-        // 0047DD34
+        // Fecha o parêntese/colchete de expressão numérica.
         emitir(i, i + 1, x === 0x29 ? "ã" : "ú");
         i += 1;
         estado.parentese = 0;
       } else if (i + 1 < n && x === 0x60 && ehDigito(b[i + 1])) fracao(REBAIXADO_UNIFICADO);
       else if (i + 1 < n && x === 0x60) {
-        // 0047DB58: crase + 1 caractere pela tabela 4AA348; a crase some.
+        // Crase + 1 caractere pela tabela da crase; a crase some.
         const crase = i;
         i += 1;
-        const saida = CRASE_67.get(car[i]);
+        const saida = CRASE_UNIFICADA.get(car[i]);
         if (saida != null) {
           emitir(crase, i + 1, saida);
           i += 1;
         } else substituirUnificado(crase);
       } else if (x === 0x2e) {
-        // 0047D2E8
+        // Ponto (no inglês, a barra).
         emitir(i, i + 1, ingles ? "/" : ".");
         i += 1;
       } else if (x === 0x22 || x === 0x93 || x === 0x94) {
-        // 0047D340
+        // Aspas.
         let saida = "\"";
         if (ingles) {
           if (x === 0x93) estado.aspasInglesas = 1;
@@ -481,12 +478,12 @@ function traduzirLinha(car, opc, estado) {
       else if (ehDigito(x)) numeroAntigo();
       else if (i + 1 < n && x === 0x60 && ehDigito(b[i + 1])) fracao(REBAIXADO_ANTIGO);
       else if (i + 1 < n && x === 0x60 && "()*[]{}".includes(car[i + 1])) {
-        // 0047C730
+        // Crase + parêntese, colchete ou chave.
         const saidas = { "(": "ê", ")": "ã", "*": "{", "[": "á", "]": "ú", "{": "~l", "}": "_," };
         emitir(i, i + 2, saidas[car[i + 1]]);
         i += 2;
       } else if (x === 0x2e) {
-        // 0047C510: "..." vira ''' (literal de 3 bytes em 47C590) e o índice anda 3.
+        // "..." vira ''' e o índice anda 3.
         if (n >= i + 3 && b[i + 1] === 0x2e && b[i + 2] === 0x2e) {
           emitir(i, i + 3, "'''");
           i += 3;
@@ -495,7 +492,7 @@ function traduzirLinha(car, opc, estado) {
           i += 1;
         }
       } else if (x === 0x22 || x === 0x93 || x === 0x94) {
-        // 0047C5A0: abre/fecha alternando.
+        // Abre/fecha alternando.
         if (x === 0x93) estado.aspas = 1;
         else if (x === 0x94) estado.aspas = 0;
         const saida = estado.aspas ? "{" : "}";
@@ -606,9 +603,10 @@ export function traduzir(texto, opcoes = {}) {
   regrasMatematica = opc.matematica ? tabelas.regras : [];
   identificar.seq = 1;
   blocoSeq = 1;
-  // O original guarda o estado das aspas e do parêntese no documento inteiro
-  // (zerado em 0049C97E). Aqui ele vale para uma chamada de traduzir.
-  const estado = { aspas: 1, aspasInglesas: 1, parentese: 0 };
+  // O estado das aspas e do parêntese vale no documento inteiro (zera no começo do texto).
+  // Quem traduz linha a linha passa o estado com que a linha começa
+  // em `opcoes.estado` e recebe o de saída em `estado`.
+  const estado = { aspas: 1, aspasInglesas: 1, parentese: 0, ...(opcoes.estado || {}) };
 
   const paragrafos = [];
   const linhas = [];
@@ -621,7 +619,7 @@ export function traduzir(texto, opcoes = {}) {
       car = [];
       pos = [];
     } else if (caractere === "\t") {
-      // 0049BB98: cada TAB vira dois espaços.
+      // Cada TAB vira dois espaços.
       car.push(" ", " ");
       pos.push(indice, indice);
     } else if (caractere !== "\r") {
@@ -654,7 +652,7 @@ export function traduzir(texto, opcoes = {}) {
       }
     }
   }
-  return { paragrafos, avisos };
+  return { paragrafos, avisos, estado };
 }
 
 function espaco() {

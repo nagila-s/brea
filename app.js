@@ -1,37 +1,41 @@
 import { tabelas } from "./tabelas.js";
-import { classificar, preparar, resumo } from "./comandos.js?edicao=26";
-import { formatar } from "./pagina.js?edicao=32";
-import { contarQuebras, finalizarTexto, mesmoBraille, removerQuebras } from "./finalizar.js?edicao=1";
-import { montarFaixas } from "./faixas.js?edicao=31";
-import { montarTinta, relatorioTinta } from "./tinta.js?edicao=1";
-import { conferirDocx, gerarDocx } from "./docx.js?edicao=1";
-import { criarJanela } from "./pareada.js?edicao=35";
+import { classificar, preparar, resumo } from "./comandos.js?edicao=27";
+import { formatar } from "./pagina.js?edicao=34";
+import { contarQuebras, finalizarTexto, mesmoBraille, paginasAntesDasQuebras, paginasEsvaziadas, removerQuebras } from "./finalizar.js?edicao=3";
+import { marcasPorLinha, montarFaixas } from "./faixas.js?edicao=35";
+import { montarTinta, parearGrifos, relatorioTinta } from "./tinta.js?edicao=7";
+import { conferirDocx, gerarDocx } from "./docx.js?edicao=4";
+import { criarJanela } from "./pareada.js?edicao=41";
 import {
+  aoDigitarMenor,
+  aoEnter,
   apagarNaBorda,
   editavel,
+  ehComando,
   palavraEm,
+  trocaPreservandoCodigos,
   selecaoNaFaixa,
   foraDeLinhaEscondida,
   indiceDaPosicao,
   iniciosDasLinhas,
+  linhaDoIndice,
+  moverLinha,
   posicaoNaFaixa,
   vizinhaEditavel,
-} from "./cursor_pareado.js?edicao=30";
-import { caractereMeta, metaDePontos, nomesPontos, traduzir, unicodeDaCela } from "./motor.js?edicao=26";
+} from "./cursor_pareado.js?edicao=38";
+import { nomesPontos, traduzir, unicodeDaCela } from "./motor.js?edicao=28";
 import {
   apararFim,
   centrarFisico,
   centrarPorEspacos,
-  converter,
   dividirLinhas,
-  expandirTab,
-  paraDos,
-  paraWindows,
   quadrinho,
-} from "./edicao.js";
+} from "./edicao.js?edicao=2";
 
-const CHAVE = "braille-facil-editor-v1";
-const RECENTES = "braille-facil-recentes";
+const CHAVE = "brauna-editor-v1";
+// Nome com que o texto e as opções ficavam guardados no navegador até 26/11/2026. Na primeira
+// abertura depois disso, o que estava lá passa para CHAVE (ver migrarChave).
+const CHAVE_ANTERIOR = "braille-facil-editor-v1";
 const $ = (id) => document.getElementById(id);
 
 const estado = {
@@ -42,7 +46,6 @@ const estado = {
   fonte: 22,
   dicionario: null,
   inibidas: new Set(),
-  perkins: [0, 0, 0, 0, 0, 0],
   atualizacaoAuto: false,
 };
 
@@ -151,8 +154,11 @@ function grade(dots) {
 function atualizarStatus() {
   const cursor = posicao();
   const linha = cursor.texto;
-  $("st-lin").textContent = `Lin: ${cursor.linha + 1}`;
-  $("st-col").textContent = `Col: ${cursor.coluna + 1}`;
+  // Lin e Col são os da página braille (linhaNoStatus), não os do texto.
+  if (!pareado.linhaNaPagina) {
+    $("st-lin").textContent = `Lin: ${cursor.linha + 1}`;
+    $("st-col").textContent = `Col: ${cursor.coluna + 1}`;
+  }
   $("st-sel").textContent = `Sel: ${cursor.selecionados} | ${cursor.total}`;
   $("st-doc").textContent = estado.nome;
   const comando = classificar(linha);
@@ -170,7 +176,7 @@ function atualizarStatus() {
       $("st-car").textContent = "";
     }
   }
-  document.title = estado.sujo ? `* ${estado.nome} — Braille Fácil` : `${estado.nome} — Braille Fácil`;
+  document.title = estado.sujo ? `* ${estado.nome} — Braúna` : `${estado.nome} — Braúna`;
   return cursor;
 }
 
@@ -219,8 +225,45 @@ function janelaPareada() {
         colocarCursorPareado();
       },
     });
+    // A largura da vista decide o tamanho do braille; ela só é lida quando muda.
+    new ResizeObserver(() => {
+      pareado.largura = $("pareada").clientWidth;
+      if (tamanhoDoBraille()) posicionarCursorPareado(false);
+    }).observe($("pareada"));
   }
   return pareado.janela;
+}
+
+// O maior braille que cabe sem desalinhar da tinta: uma linha inteira de celas (as colunas da
+// página) na metade do braille, e os pontos dentro da altura da faixa, que é a mesma da tinta.
+// As proporções da cela (largura e altura dos pontos) vêm da própria fonte, medidas num canvas.
+// Devolve true quando o tamanho mudou.
+const FONTE_BRAILLE = '"Segoe UI Symbol", "Segoe UI", sans-serif';
+let proporcoesDaCela = null;
+
+function tamanhoDoBraille() {
+  const raiz = $("pareada");
+  const largura = pareado.largura ?? raiz.clientWidth;
+  if (!largura) return false;
+  if (!proporcoesDaCela) {
+    const pincel = document.createElement("canvas").getContext("2d");
+    pincel.font = `100px ${FONTE_BRAILLE}`;
+    const medida = pincel.measureText("\u283f");
+    proporcoesDaCela = { cela: medida.width / 100, pontos: (medida.actualBoundingBoxAscent + medida.actualBoundingBoxDescent) / 100 };
+  }
+  const { cela, pontos } = proporcoesDaCela;
+  if (!cela || !pontos) return false;
+  const colunas = pareado.formato?.colunas || 34;
+  // Metade da vista, menos o recuo do lado braille (14px), a borda do meio e uma folga.
+  const porLargura = (largura / 2 - 18) / (colunas * cela);
+  // Os pontos ocupam até 86% da altura da faixa: sobra espaço para a seleção.
+  const porAltura = (janelaPareada().alturaFaixa() * 0.86) / pontos;
+  const valor = `${Math.max(10, Math.floor(Math.min(porLargura, porAltura) * 2) / 2)}px`;
+  if (raiz.style.getPropertyValue("--fonte-braille") === valor) return false;
+  raiz.style.setProperty("--fonte-braille", valor);
+  // A largura da cela muda: o cursor, a seleção e o clique no braille medem de novo.
+  pareado.medidas = null;
+  return true;
 }
 
 function reconstruirPareado() {
@@ -230,6 +273,8 @@ function reconstruirPareado() {
   const formato = formatar(linhas, op, false, { semVista: true });
   const janela = janelaPareada();
   pareado.faixas = montarFaixas(linhas, formato, op);
+  marcarGrifos(linhas, pareado.faixas);
+  pareado.linhaNaPagina = contarLinhasNasPaginas(pareado.faixas);
   pareado.texto = area.value;
   pareado.inicios = iniciosDasLinhas(area.value);
   pareado.sujo = false;
@@ -238,7 +283,142 @@ function reconstruirPareado() {
   pareado.sujoTotal = false;
   // O desenho fica para posicionarCursorPareado, que sabe para onde a tela vai.
   pareado.formato = { colunas: formato.colunas, altura: formato.altura, paginas: formato.paginas, avisos: formato.avisos || [] };
+  pareado.estrutura = formato.estrutura || [];
+  atualizarPaginasCurtas(op);
+  tamanhoDoBraille();
   agendarTitulo();
+}
+
+// Aviso de redistribuir (finalizar.js, paginasEsvaziadas). Compara a página que cada <P> fecha
+// com a da reconstrução anterior; texto aberto agora ou opções mudadas recomeçam a conta. Fica
+// numa faixa acima das páginas, sem interromper a digitação.
+function atualizarPaginasCurtas(op) {
+  const quebras = paginasAntesDasQuebras(pareado.estrutura);
+  const chave = JSON.stringify(op);
+  const comBase = !pareado.semBase && pareado.chaveDasQuebras === chave;
+  pareado.paginasCurtas = comBase ? paginasEsvaziadas(pareado.quebras, quebras, pareado.paginasCurtas) : new Set();
+  pareado.quebras = quebras;
+  pareado.chaveDasQuebras = chave;
+  pareado.semBase = false;
+  mostrarAvisoDePaginas();
+}
+
+function paginasCurtas() {
+  return [...(pareado.paginasCurtas || [])].sort((a, b) => a - b).map((k) => pareado.quebras[k]).filter(Boolean);
+}
+
+function mostrarAvisoDePaginas() {
+  const aviso = $("aviso-paginas");
+  const curtas = paginasCurtas();
+  if (!curtas.length) {
+    aviso.hidden = true;
+    return;
+  }
+  const nome = (quebra) => pareado.estrutura[quebra.pagina]?.numeroTexto || String(quebra.pagina + 1);
+  let texto;
+  if (curtas.length === 1) {
+    const [quebra] = curtas;
+    texto = `A página ${nome(quebra)} ficou com ${quebra.usadas} de ${quebra.cabem} linhas antes de uma quebra <P>.`;
+  } else {
+    const nomes = curtas.map(nome);
+    texto = `As páginas ${nomes.slice(0, -1).join(", ")} e ${nomes[nomes.length - 1]} ficaram com menos da metade das linhas antes de uma quebra <P>.`;
+  }
+  texto += " As quebras gravadas não se movem sozinhas: as páginas precisam ser redistribuídas.";
+  const alvo = aviso.querySelector(".texto-aviso");
+  if (alvo.textContent !== texto) alvo.textContent = texto;
+  aviso.hidden = false;
+}
+
+// "Ver": leva o cursor ao fim da próxima página curta (depois da do cursor; volta ao começo).
+function irParaPaginaCurta() {
+  const curtas = paginasCurtas();
+  if (!curtas.length) return;
+  const atual = pareado.faixas[pareado.cursorFaixa]?.pagina ?? -1;
+  const alvo = curtas.find((quebra) => quebra.pagina > atual) ?? curtas[0];
+  const quebra = pareado.faixas.findIndex((faixa) => faixa.tipo === "quebra" && faixa.pagina === alvo.pagina + 1);
+  const faixa = quebra >= 0 ? vizinhaVisivel(quebra, -1) : null;
+  if (faixa == null) return;
+  $("texto").focus({ preventScroll: true });
+  irParaIndice(indiceDaPosicao(pareado.faixas, pareado.inicios, pareado.texto, { faixa, coluna: (pareado.faixas[faixa].tinta || "").length }));
+  atualizarStatus();
+  posicionarCursorPareado(true);
+}
+
+// Número de cada faixa dentro da sua página braille, contando o cabeçalho, as linhas de texto
+// e as linhas em branco (o que vai para o papel). Comando, comentário e quebra não são linha:
+// ficam com o número da linha braille que vem logo depois deles.
+function contarLinhasNasPaginas(faixas) {
+  const numeros = new Array(faixas.length);
+  let pagina = null;
+  let contadas = 0;
+  faixas.forEach((faixa, indice) => {
+    if (faixa.pagina !== pagina) {
+      pagina = faixa.pagina;
+      contadas = 0;
+    }
+    const linhaBraille = faixa.tipo === "texto" || faixa.tipo === "branco" || faixa.tipo === "cabecalho";
+    if (linhaBraille) contadas += 1;
+    numeros[indice] = linhaBraille ? contadas : contadas + 1;
+  });
+  return numeros;
+}
+
+function linhaNoStatus() {
+  const indice = pareado.cursorFaixa;
+  if (indice == null || !pareado.linhaNaPagina) return;
+  $("st-lin").textContent = `Lin: ${pareado.linhaNaPagina[indice]}`;
+  $("st-col").textContent = `Col: ${(pareado.cursorColuna ?? 0) + 1}`;
+}
+
+// Grifo no editor: o "*" (e o "$" do grifo duplo) fica mais claro e o que está entre eles
+// aparece em negrito; no grifo duplo "$*", em negrito e itálico. A tinta de cada faixa ganha
+// `estilos`, um código por coluna (1 marca, 2 negrito, 3 negrito e itálico), com o mesmo
+// pareamento de asteriscos da versão tinta (tinta.js, parearGrifos).
+function marcarGrifos(linhas, faixas) {
+  const fixas = marcasPorLinha(linhas).map((marcas) => marcas.includes("F-"));
+  const { pares } = parearGrifos(linhas, fixas);
+  if (!pares.length) return;
+  const porLinha = new Map();
+  const daLinha = (numero) => {
+    let codigos = porLinha.get(numero);
+    if (!codigos) {
+      codigos = new Uint8Array(linhas[numero].length);
+      porLinha.set(numero, codigos);
+    }
+    return codigos;
+  };
+  for (const par of pares) {
+    for (const marca of [par.abre, par.fecha]) daLinha(marca.linha).fill(1, marca.de, marca.ate);
+    const tipo = par.duplo ? 3 : 2;
+    for (let atual = par.abre.linha; atual <= par.fecha.linha; atual += 1) {
+      const codigos = daLinha(atual);
+      const de = atual === par.abre.linha ? par.abre.ate : 0;
+      const ate = atual === par.fecha.linha ? par.fecha.de : linhas[atual].length;
+      for (let coluna = de; coluna < ate; coluna += 1) if (!codigos[coluna]) codigos[coluna] = tipo;
+    }
+  }
+  for (const faixa of faixas) {
+    if (!faixa.trechos?.length || !faixa.tinta) continue;
+    let estilos = null;
+    for (const trecho of faixa.trechos) {
+      const codigos = porLinha.get(trecho.linha);
+      if (!codigos) continue;
+      estilos ??= new Uint8Array(faixa.tinta.length);
+      const fonte = linhas[trecho.linha];
+      let coluna = trecho.coluna;
+      for (let c = trecho.de; c < trecho.ate && coluna < trecho.fim; c += 1) {
+        const largura = fonte[c] === "\t" ? 4 : 1;
+        estilos.fill(codigos[c], coluna, Math.min(trecho.fim, coluna + largura));
+        coluna += largura;
+      }
+    }
+    if (!estilos || !estilos.some(Boolean)) continue;
+    // O hífen do corte, fora dos trechos, acompanha o grifo da palavra partida.
+    const ultima = estilos.length - 1;
+    if (faixa.tinta.endsWith("-") && !estilos[ultima] && estilos[ultima - 1] >= 2) estilos[ultima] = estilos[ultima - 1];
+    faixa.estilos = estilos;
+    faixa.estiloChave = estilos.join("");
+  }
 }
 
 // O título sai alguns instantes depois da última mudança: a situação dos códigos precisa
@@ -253,16 +433,30 @@ function atualizarTitulo() {
   if (!formato) return;
   const cursor = posicao();
   const linhas = pareado.texto.slice(0, pareado.inicios[cursor.linha + 1] ?? pareado.texto.length).split("\n");
-  const situacao = resumo(preparar(linhas)[cursor.linha]);
+  const info = preparar(linhas)[cursor.linha];
+  const situacao = resumo(info);
   const pagina = (pareado.faixas[pareado.cursorFaixa]?.pagina ?? 0) + 1;
   const partes = [];
   if (!situacao.includes("×")) partes.push(`${formato.colunas}×${formato.altura}`);
   partes.push(`página ${pagina} de ${formato.paginas}`);
   if (situacao) partes.push(situacao);
-  // O original mostrava estas mensagens em caixas a cada compilação; aqui ficam no título.
+  // As mensagens da paginação ficam no título, sem caixas a cada mudança.
   if (formato.avisos.length) partes.push(`⚠ ${formato.avisos.length} ${formato.avisos.length === 1 ? "aviso" : "avisos"}`);
   $("painel-titulo").textContent = partes.join(" · ");
   $("painel-titulo").title = formato.avisos.map((aviso) => aviso.texto).join("\n");
+  paginacaoNoStatus(pagina - 1, info?.paginaTinta);
+}
+
+// Barra de baixo: o número da página do livro em braille (o do cabeçalho, romano nas páginas
+// iniciais; também no verso, que não imprime cabeçalho) e a página em tinta que vale na linha
+// do cursor (um <nnn> no meio da página braille já conta a partir dali).
+function paginacaoNoStatus(indice, paginaTinta) {
+  const pagina = pareado.estrutura?.[indice];
+  // Página sem numeração (<T->, antes da capa) fica com traço; a contagem corrida está no topo.
+  const braille = pagina?.numeroTexto || "—";
+  const tinta = paginaTinta || pagina?.paginaTinta;
+  $("st-pag-tinta").textContent = `Tinta: ${tinta ? String(tinta) : "—"}`;
+  $("st-pag-braille").textContent = `Braille: ${braille}`;
 }
 
 function posicaoPareada(indice) {
@@ -297,6 +491,8 @@ function pintarSelecaoPareada() {
   if (medidas) raiz.style.setProperty("--cela", `${medidas.braille}px`);
   janelaPareada().elementos().forEach((elemento, indice) => {
     const faixa = pareado.faixas[indice];
+    // Etiqueta de comandos fechados e traço de quebra não têm os dois lados.
+    if (!elemento.querySelector(".lado-tinta")) return;
     const selecao = selecaoNaFaixa(faixa, pareado.inicios, pareado.texto, de, ate);
     if (!selecao) return;
     const tinta = document.createElement("span");
@@ -340,12 +536,15 @@ function posicionarCursorPareado(seguir) {
   const janela = janelaPareada();
   const posicao = posicaoPareada(indiceDoCursor());
   let alvo = posicao.faixa;
+  // Cursor numa linha de comando ou comentário: ela se abre (fechada, é só uma etiqueta).
+  janela.abrir(alvo);
   if (!janela.altura(alvo)) {
     alvo = vizinhaEditavel(pareado.faixas, posicao.faixa, 1) ?? vizinhaEditavel(pareado.faixas, posicao.faixa, -1);
   }
   if (pareado.cursorFaixa !== alvo) agendarTitulo();
   pareado.cursorFaixa = alvo;
   pareado.cursorColuna = posicao.coluna;
+  linhaNoStatus();
   // A posição da faixa vem da soma das alturas: rolar não depende de ela estar desenhada.
   if (seguir && alvo != null) {
     const topo = janela.topo(alvo);
@@ -396,12 +595,15 @@ function medidasPareadas() {
 
 // Clique: na tinta pela coluna; no braille pela cela, que sabe de que letra veio.
 function indiceDoClique(evento, sobLetra = false) {
+  // Etiqueta de um código: o cursor não entra nele (a edição é pelo duplo clique).
+  if (evento.target.closest(".etiqueta")) return null;
   const linha = evento.target.closest(".faixa");
   if (!linha || linha.dataset.i == null) return null;
   const indice = Number(linha.dataset.i);
   const faixa = pareado.faixas[indice];
-  if (!editavel(faixa)) {
-    const vizinha = vizinhaEditavel(pareado.faixas, indice, 1) ?? vizinhaEditavel(pareado.faixas, indice, -1);
+  const quebraAberta = faixa?.tipo === "quebra" && faixa.linha != null;
+  if ((!editavel(faixa) && !quebraAberta) || !janelaPareada().altura(indice)) {
+    const vizinha = vizinhaVisivel(indice, 1) ?? vizinhaVisivel(indice, -1);
     if (vizinha == null) return null;
     return indiceDaPosicao(pareado.faixas, pareado.inicios, pareado.texto, { faixa: vizinha, coluna: 0 });
   }
@@ -423,12 +625,50 @@ function indiceDoClique(evento, sobLetra = false) {
   return indiceDaPosicao(pareado.faixas, pareado.inicios, pareado.texto, { faixa: indice, coluna });
 }
 
+// Próxima faixa onde o cursor pode ficar, pulando o que não ocupa linha (os códigos fechados).
+function vizinhaVisivel(indice, passo) {
+  let proxima = vizinhaEditavel(pareado.faixas, indice, passo);
+  while (proxima != null && !janelaPareada().altura(proxima)) proxima = vizinhaEditavel(pareado.faixas, proxima, passo);
+  return proxima;
+}
+
+// Troca um trecho do texto pelo execCommand, que deixa a troca no desfazer do navegador.
+function trocarNoTexto(troca) {
+  const area = $("texto");
+  area.setSelectionRange(troca.de, troca.ate);
+  const feito = troca.texto ? document.execCommand("insertText", false, troca.texto) : document.execCommand("delete");
+  if (!feito) {
+    area.setRangeText(troca.texto, troca.de, troca.ate, "end");
+    area.dispatchEvent(new Event("input", { bubbles: true }));
+  }
+}
+
 function teclaPareada(evento) {
   const area = $("texto");
   if (pareado.sujo || pareado.texto !== area.value) reconstruirPareado();
   const vertical = evento.key === "ArrowUp" || evento.key === "ArrowDown";
   if (!vertical) pareado.colunaAlvo = null;
+
+  // Backspace e Delete na borda de uma linha, também com Alt ou Ctrl (que apagariam a palavra
+  // e a quebra de linha junto): os códigos ao lado não mudam (ver apagarNaBorda).
+  if ((evento.key === "Backspace" || evento.key === "Delete") && area.selectionStart === area.selectionEnd && !area.readOnly) {
+    const passo = evento.key === "Backspace" ? -1 : 1;
+    const apagar = apagarNaBorda(pareado.faixas, pareado.inicios, pareado.texto, area.selectionStart, passo);
+    if (!apagar) return;
+    evento.preventDefault();
+    if (apagar.de === apagar.ate) return;
+    trocarNoTexto({ de: apagar.de, ate: apagar.ate, texto: "" });
+    cursorForaDoCodigo(apagar.cursor, passo);
+    return;
+  }
   if (evento.ctrlKey || evento.altKey || evento.metaKey) return;
+
+  // Código aberto pelo duplo clique: Enter fecha (sem abrir linha nova), Esc fecha desfazendo.
+  if ((evento.key === "Enter" || evento.key === "Escape") && pareado.codigoAberto && !evento.isComposing) {
+    evento.preventDefault();
+    fecharCodigo(evento.key === "Escape");
+    return;
+  }
 
   if (vertical || evento.key === "PageUp" || evento.key === "PageDown") {
     evento.preventDefault();
@@ -439,7 +679,8 @@ function teclaPareada(evento) {
     const vezes = vertical ? 1 : Math.max(1, Math.floor($("pareada").clientHeight / alturaFaixa) - 2);
     let destino = atual.faixa;
     for (let i = 0; i < vezes; i += 1) {
-      const proxima = vizinhaEditavel(pareado.faixas, destino, passo);
+      // Pula o que não ocupa linha (comandos e comentários fechados), como no braille.
+      const proxima = vizinhaVisivel(destino, passo);
       if (proxima == null) break;
       destino = proxima;
     }
@@ -462,22 +703,16 @@ function teclaPareada(evento) {
     return;
   }
 
-  if ((evento.key === "Backspace" || evento.key === "Delete") && area.selectionStart === area.selectionEnd) {
-    const passo = evento.key === "Backspace" ? -1 : 1;
-    const apagar = apagarNaBorda(pareado.faixas, pareado.inicios, pareado.texto, area.selectionStart, passo);
-    if (!apagar) return;
+  if (evento.key === "Enter" && !evento.shiftKey && !evento.isComposing && !area.readOnly && area.selectionStart === area.selectionEnd) {
+    // Enter parte o parágrafo com o recuo dele (ver aoEnter); Shift+Enter é a quebra pura.
     evento.preventDefault();
-    if (apagar.de === apagar.ate) return;
-    // execCommand mantém o Ctrl+Z do textarea.
-    area.setSelectionRange(apagar.de, apagar.ate);
-    if (!document.execCommand("delete")) {
-      area.setRangeText("", apagar.de, apagar.ate, "end");
-      area.dispatchEvent(new Event("input", { bubbles: true }));
-    }
+    trocarNoTexto(aoEnter(area.value, area.selectionStart, opcoes()));
+    return;
   }
+
 }
 
-// Qualquer ação (menu, diálogo, Perkins, busca, colar...) mexe só no textarea. Depois de cada
+// Qualquer ação (menu, diálogo, busca, colar...) mexe só no textarea. Depois de cada
 // clique, tecla, mudança ou diálogo fechado, o pareado confere se o texto ou a seleção mudou.
 const sincronia = { de: -1, ate: -1, quadro: 0 };
 
@@ -492,42 +727,53 @@ function sincronizarPareado() {
   });
 }
 
-// Depois de um movimento nativo (setas, digitação): tira o cursor das linhas de código.
+// Depois de uma troca feita pelo programa: põe o cursor em `indice`, fora das linhas de código.
+function cursorForaDoCodigo(indice, direcao) {
+  const area = $("texto");
+  if (pareado.sujo || pareado.texto !== area.value) reconstruirPareado();
+  const fora = foraDeLinhaEscondida(pareado.faixas, pareado.inicios, pareado.texto, Math.min(indice, area.value.length), direcao);
+  area.setSelectionRange(fora, fora);
+  pareado.ultimoIndice = fora;
+}
+
+// Apagar ou digitar por cima de uma seleção que pega códigos: o texto sai e os códigos ficam
+// (ver trocaPreservandoCodigos). Devolve false quando a troca comum serve.
+function trocarPreservandoCodigos(de, ate, novo) {
+  const troca = trocaPreservandoCodigos($("texto").value, de, ate, novo);
+  if (!troca) return false;
+  estado.trocaDoPrograma = true;
+  try {
+    trocarNoTexto(troca);
+  } finally {
+    estado.trocaDoPrograma = false;
+  }
+  cursorForaDoCodigo(troca.cursor, -1);
+  return true;
+}
+
+// Depois de um movimento nativo (setas, digitação): tira o cursor das linhas de código. Fica só
+// a linha em que o cursor já estava, que é um código sendo escrito: ele vira etiqueta quando o
+// cursor sai dela.
 function aposMovimentoPareado() {
   const area = $("texto");
   if (pareado.sujo || pareado.texto !== area.value) reconstruirPareado();
   if (area.selectionStart === area.selectionEnd) {
     const indice = area.selectionStart;
     const direcao = Math.sign(indice - pareado.ultimoIndice) || 1;
-    const fora = foraDeLinhaEscondida(pareado.faixas, pareado.inicios, pareado.texto, indice, direcao);
+    const aberta = pareado.codigoAberto?.linha ?? linhaDoIndice(pareado.inicios, Math.min(pareado.ultimoIndice, pareado.texto.length));
+    let fora = foraDeLinhaEscondida(pareado.faixas, pareado.inicios, pareado.texto, indice, direcao, aberta);
+    // Saiu do código aberto pelo duplo clique: ele fecha (e sai do texto, se ficou vazio).
+    if (pareado.codigoAberto && linhaDoIndice(pareado.inicios, fora) !== pareado.codigoAberto.linha) {
+      area.setSelectionRange(fora, fora);
+      if (tirarCodigoVazio()) {
+        reconstruirPareado();
+        fora = foraDeLinhaEscondida(pareado.faixas, pareado.inicios, pareado.texto, area.selectionStart, direcao);
+      }
+    }
     if (fora !== indice) area.setSelectionRange(fora, fora);
     pareado.ultimoIndice = fora;
   }
   posicionarCursorPareado(true);
-}
-
-function desenharCinco() {
-  const caixa = $("cinco");
-  if (!$("cinco-linhas").checked) {
-    caixa.hidden = true;
-    return;
-  }
-  caixa.hidden = false;
-  const comBraille = [];
-  let doCursor = 0;
-  pareado.faixas.forEach((faixa, indice) => {
-    if (!faixa.braille || (faixa.tipo !== "texto" && faixa.tipo !== "branco" && faixa.tipo !== "cabecalho")) return;
-    if (indice <= (pareado.cursorFaixa ?? 0)) doCursor = comBraille.length;
-    comBraille.push(faixa);
-  });
-  const de = Math.max(0, doCursor - 2);
-  caixa.replaceChildren();
-  for (const faixa of comBraille.slice(de, de + 5)) {
-    const linha = document.createElement("div");
-    linha.className = "braille";
-    linha.textContent = textoBraille(faixa.braille) || " ";
-    caixa.append(linha);
-  }
 }
 
 function textoBraille(celas) {
@@ -545,6 +791,8 @@ function persistir() {
     numero: $("numero").checked,
     comTitulo: $("com-titulo").checked,
     tiraBrancas: $("tira-brancas").checked,
+    // A opção passou a vir desligada; o valor salvo antes disso (que era só o padrão) não vale.
+    brancasV2: true,
     numeracao: $("numeracao").value,
     colunasPadrao: Number($("colunas-padrao").value) || 34,
     linhasPadrao: Number($("linhas-padrao").value) || 28,
@@ -594,19 +842,34 @@ function aplicarFonte(tamanho) {
   pareado.sujoTotal = true;
 }
 
+// Passa o que estava guardado com o nome anterior para o nome novo, uma vez. O anterior só é
+// apagado depois que o novo foi gravado.
+function migrarChave() {
+  try {
+    const anterior = localStorage.getItem(CHAVE_ANTERIOR);
+    if (anterior == null) return;
+    if (localStorage.getItem(CHAVE) == null) localStorage.setItem(CHAVE, anterior);
+    if (localStorage.getItem(CHAVE) != null) localStorage.removeItem(CHAVE_ANTERIOR);
+  } catch {
+    /* sem acesso ao armazenamento: fica tudo como estava */
+  }
+}
+
 function restaurar() {
+  migrarChave();
   try {
     const dados = JSON.parse(localStorage.getItem(CHAVE) || "null");
     if (!dados) return;
     estado.nome = dados.nome || "sem título";
     $("texto").value = dados.texto || "";
+    pareado.semBase = true;
     if (dados.codigo === "antigo" || dados.codigo === "unificado") $("codigo").value = dados.codigo;
     $("matematica").checked = dados.matematica !== false;
     $("maiuscula").checked = dados.maiuscula !== false;
     $("maiuscula-palavra").checked = dados.maiusculaPalavra !== false;
     $("numero").checked = dados.numero !== false;
     if (typeof dados.comTitulo === "boolean") $("com-titulo").checked = dados.comTitulo;
-    if (typeof dados.tiraBrancas === "boolean") $("tira-brancas").checked = dados.tiraBrancas;
+    if (typeof dados.tiraBrancas === "boolean" && dados.brancasV2) $("tira-brancas").checked = dados.tiraBrancas;
     if (dados.numeracao != null) $("numeracao").value = String(dados.numeracao);
     if (dados.colunasPadrao) $("colunas-padrao").value = dados.colunasPadrao;
     if (dados.linhasPadrao) $("linhas-padrao").value = dados.linhasPadrao;
@@ -645,9 +908,13 @@ function irPara(linha, coluna) {
 // Ao abrir um texto, o cursor e a rolagem ficam no começo do livro.
 function irAoInicio() {
   const area = $("texto");
-  area.setSelectionRange(0, 0);
+  // O cursor começa na primeira linha que não é código: dentro de um <T-> ele abriria a linha.
+  const inicios = iniciosDasLinhas(area.value);
+  let linha = 0;
+  while (linha < inicios.length - 1 && ehComando(linhaDoTexto(area.value, inicios, linha))) linha += 1;
+  area.setSelectionRange(inicios[linha], inicios[linha]);
   $("pareada").scrollTop = 0;
-  pareado.ultimoIndice = 0;
+  pareado.ultimoIndice = inicios[linha];
   area.focus({ preventScroll: true });
 }
 
@@ -660,7 +927,6 @@ function salvar() {
   link.click();
   URL.revokeObjectURL(url);
   estado.sujo = false;
-  lembrarRecente();
   desenhar();
 }
 
@@ -669,6 +935,7 @@ function novo() {
     if (!window.confirm("Começar um texto novo? O texto atual continua guardado neste navegador até você abrir outro.")) return;
   }
   $("texto").value = "";
+  pareado.semBase = true;
   estado.nome = "sem título";
   estado.sujo = false;
   $("texto").focus();
@@ -685,18 +952,19 @@ async function editar(acao) {
   }
   try {
     if (acao === "recortar" || acao === "copiar") {
-      const trecho = area.value.slice(area.selectionStart, area.selectionEnd);
-      await navigator.clipboard.writeText(trecho);
-      if (acao === "recortar") {
-        area.setRangeText("", area.selectionStart, area.selectionEnd, "start");
-        estado.sujo = true;
-      }
+      const de = area.selectionStart;
+      const ate = area.selectionEnd;
+      if (ate <= de) return;
+      await navigator.clipboard.writeText(area.value.slice(de, ate));
+      // Pelo trocarNoTexto, o recortar e o colar entram no Ctrl+Z.
+      if (acao === "recortar" && !trocarPreservandoCodigos(de, ate, "")) trocarNoTexto({ de, ate, texto: "" });
       return;
     }
     if (acao === "colar") {
       const trecho = await navigator.clipboard.readText();
-      area.setRangeText(trecho, area.selectionStart, area.selectionEnd, "end");
-      estado.sujo = true;
+      if (trecho && !trocarPreservandoCodigos(area.selectionStart, area.selectionEnd, trecho)) {
+        trocarNoTexto({ de: area.selectionStart, ate: area.selectionEnd, texto: trecho });
+      }
     }
   } catch {
     document.execCommand(acao === "recortar" ? "cut" : acao === "copiar" ? "copy" : "paste");
@@ -736,13 +1004,39 @@ function inserirSimbolo() {
   persistir();
 }
 
+// Toda troca feita por botão ou menu passa pelo histórico de desfazer do navegador (Ctrl+Z).
+// Com setRangeText ela ficava de fora, e o Ctrl+Z seguinte desfazia outra coisa.
 function substituir(inicio, fim, pedaco) {
   const area = $("texto");
   area.focus();
-  area.setRangeText(pedaco, inicio, fim, "end");
+  estado.trocaDoPrograma = true;
+  try {
+    trocarNoTexto({ de: inicio, ate: fim, texto: pedaco });
+  } finally {
+    estado.trocaDoPrograma = false;
+  }
   estado.sujo = true;
   desenhar();
   persistir();
+}
+
+// A linha do texto onde está a posição é um comando (<t …>, <R+>, <P>, <12>, comentário)?
+function linhaDeComando(indice) {
+  const valor = $("texto").value;
+  const ini = valor.lastIndexOf("\n", indice - 1) + 1;
+  let fim = valor.indexOf("\n", indice);
+  if (fim < 0) fim = valor.length;
+  const linha = valor.slice(ini, fim);
+  return linha.startsWith("<") && Boolean(classificar(linha.replaceAll("\t", "    ")));
+}
+
+// As marcas de texto (grifo, parênteses auxiliares, informática, nota) não entram numa linha
+// de comando: o comando deixaria de começar com "<" e pararia de valer.
+function foraDeComando() {
+  const area = $("texto");
+  if (!linhaDeComando(area.selectionStart) && !linhaDeComando(area.selectionEnd)) return true;
+  avisar("Linha de comando", "O cursor está numa linha de comando. Ponha o cursor (ou selecione o trecho) no texto e tente de novo.");
+  return false;
 }
 
 function faixaLinhas() {
@@ -765,6 +1059,7 @@ function envolver(abre, fecha) {
 }
 
 function envolverSelecao(abre, fecha) {
+  if (!foraDeComando()) return;
   const area = $("texto");
   const ini = area.selectionStart ?? 0;
   const fim = area.selectionEnd ?? ini;
@@ -782,61 +1077,16 @@ function inserirNaLinha(texto) {
   substituir(ini, ini, `${texto}\n`);
 }
 
+// O texto todo trocado de uma vez (conversões): o desfazer é o do próprio editor.
 function substituirTextoTodo(texto) {
-  const area = $("texto");
-  substituir(0, area.value.length, texto);
+  trocarTextoComDesfazer(texto);
+  estado.sujo = true;
+  persistir();
 }
 
 function colunasAtuais() {
   const info = preparar(linhasDoTexto()).find((item) => item.colunas);
   return info?.colunas || opcoes().colunasPadrao || 34;
-}
-
-function lembrarRecente() {
-  const item = { nome: estado.nome, texto: $("texto").value };
-  if (!item.texto || item.texto.length > 200000) return;
-  let lista = [];
-  try {
-    lista = JSON.parse(localStorage.getItem(RECENTES) || "[]");
-  } catch {
-    lista = [];
-  }
-  lista = [item, ...lista.filter((outro) => outro.nome !== item.nome)].slice(0, 5);
-  localStorage.setItem(RECENTES, JSON.stringify(lista));
-  montarRecentes();
-}
-
-function montarRecentes() {
-  const menu = $("menu-reabrir");
-  menu.replaceChildren();
-  let lista = [];
-  try {
-    lista = JSON.parse(localStorage.getItem(RECENTES) || "[]");
-  } catch {
-    lista = [];
-  }
-  if (!lista.length) {
-    const vazio = document.createElement("button");
-    vazio.type = "button";
-    vazio.disabled = true;
-    vazio.textContent = "(vazio)";
-    menu.append(vazio);
-    return;
-  }
-  lista.forEach((item, indice) => {
-    const botao = document.createElement("button");
-    botao.type = "button";
-    botao.textContent = `${indice + 1}. ${item.nome}`;
-    botao.addEventListener("click", () => {
-      $("texto").value = item.texto;
-      estado.nome = item.nome;
-      estado.sujo = false;
-      irAoInicio();
-      desenhar(true);
-      persistir();
-    });
-    menu.append(botao);
-  });
 }
 
 // Troca o texto inteiro como uma edição só, que o Ctrl+Z desfaz de uma vez (Finalizar,
@@ -849,6 +1099,7 @@ const troca = { antes: null, depois: null, linha: 0, coluna: 0 };
 function definirTexto(texto, linha, coluna) {
   const area = $("texto");
   area.value = texto;
+  pareado.semBase = true;
   const linhas = texto.split("\n");
   const alvo = Math.min(linha, linhas.length - 1);
   let indice = 0;
@@ -927,23 +1178,7 @@ function baixar(nome, conteudo, tipo) {
   URL.revokeObjectURL(url);
 }
 
-function textoFormatado(tinta) {
-  return formatar(linhasDoTexto(), opcoes(), tinta).linhas
-    .filter((linha) => linha.tipo !== "codigo" || linha.separador)
-    .map((linha) => linha.texto)
-    .join("\n");
-}
-
-function exportarWord(tinta) {
-  const corpo = textoFormatado(tinta)
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;");
-  const html = `<html><head><meta charset="utf-8"></head><body><pre>${corpo}</pre></body></html>`;
-  baixar(tinta ? "tinta.doc" : "braille.doc", html, "application/msword");
-}
-
-// Tinta no Word: a versão em fonte ampliada, linha a linha igual ao braille. A tinta sai do
+// Versão tinta: a versão em fonte ampliada, linha a linha igual ao braille. A tinta sai do
 // texto (tinta.js), não do braille; o .docx é gravado direto e lido de volta para conferir.
 function exportarTinta() {
   const tinta = montarTinta(linhasDoTexto(), opcoes());
@@ -964,65 +1199,83 @@ function exportarTinta() {
   $("tinta-dialogo").showModal();
 }
 
-// Imprimir: o texto do .txt, ou o braille do livro inteiro com uma página braille por folha.
-// A área de impressão só existe enquanto a janela de impressão está aberta.
-function imprimir(tipo) {
-  const area = $("impressao");
-  area.replaceChildren();
-  if (tipo === "texto") {
-    const pre = document.createElement("pre");
-    pre.textContent = $("texto").value;
-    area.append(pre);
-  } else {
-    if (pareado.sujo || pareado.texto !== $("texto").value) reconstruirPareado();
-    let pagina = null;
-    let folha = null;
-    for (const faixa of pareado.faixas) {
-      if (faixa.tipo !== "texto" && faixa.tipo !== "branco" && faixa.tipo !== "cabecalho") continue;
-      if (!folha || faixa.pagina !== pagina) {
-        folha = document.createElement("pre");
-        folha.className = "folha-braille";
-        area.append(folha);
-        pagina = faixa.pagina;
-      }
-      folha.append(`${textoBraille(faixa.braille || [])}\n`);
-    }
-  }
-  area.dataset.tipo = tipo;
-  area.hidden = false;
-  document.body.dataset.impressao = tipo;
-  window.print();
-  document.body.dataset.impressao = "";
-  area.hidden = true;
-  area.replaceChildren();
-}
-
-function metaDaSelecao() {
-  const area = $("texto");
-  const trecho = area.value.slice(area.selectionStart, area.selectionEnd);
-  if (!trecho) return "";
-  return trecho.split("\n").map((linha) => {
-    const resultado = traduzir(linha, opcoes());
-    const paragrafo = resultado.paragrafos.find((item) => !item.vazio);
-    return (paragrafo ? paragrafo.celas : []).map((cela) => (
-      cela.tipo === "espaco" ? " " : caractereMeta(cela.meta)
-    )).join("");
-  }).join("\n");
-}
-
 function aplicarQuadrinho(tipo) {
   const { ini, fim, valor } = faixaLinhas();
   const linhas = valor.slice(ini, fim).split("\n");
   substituir(ini, fim, quadrinho(linhas, tipo).join("\n"));
 }
 
-function centrarEscolha(fisica) {
+// Centralizar e alinhar à esquerda as linhas da seleção. No texto que o braille ajusta, a
+// linha centralizada começa com 10 ou mais espaços (o braille a centraliza) e a linha na
+// margem começa com um espaço (abre parágrafo sem recuo); no <F->, onde o espaço é literal,
+// a centralização é física, pelas colunas da página, e alinhar à esquerda tira os espaços.
+function alinharLinhas(modo) {
   const { ini, fim, valor } = faixaLinhas();
+  const primeira = valor.slice(0, ini).split("\n").length - 1;
+  const marcas = marcasPorLinha(linhasDoTexto());
   const colunas = colunasAtuais();
-  const linhas = valor.slice(ini, fim).split("\n").map((linha) => (
-    fisica ? centrarFisico(linha, colunas) : centrarPorEspacos(linha)
-  ));
-  substituir(ini, fim, linhas.join("\n"));
+  const linhas = valor.slice(ini, fim).split("\n").map((linha, indice) => {
+    const miolo = linha.trim();
+    if (!miolo || linha.startsWith("<")) return linha;
+    const fixa = marcas[primeira + indice]?.includes("F-");
+    if (modo === "centro") return fixa ? centrarFisico(linha, colunas) : centrarPorEspacos(linha);
+    if (fixa) return miolo;
+    const recuo = linha.length - linha.trimStart().length;
+    return recuo >= 10 ? ` ${miolo}` : linha;
+  });
+  const novo = linhas.join("\n");
+  if (novo === valor.slice(ini, fim)) return;
+  $("texto").focus();
+  trocarNoTexto({ de: ini, ate: fim, texto: novo });
+  $("texto").setSelectionRange(ini, ini + novo.length);
+}
+
+// Negrito e itálico: o braille tem um grifo só (*) e o grifo duplo ($*). Negrito ou itálico
+// sozinho grava o *; os dois juntos, o $*. Cada botão liga e desliga o seu. Como o * não diz
+// qual dos dois foi pedido, o último grifo aplicado fica lembrado enquanto o trecho não muda.
+const PALAVRA = /[\p{L}\p{N}-]/u;
+
+function aplicarGrifo(tipo) {
+  if (!foraDeComando()) return;
+  const area = $("texto");
+  const valor = area.value;
+  let ini = area.selectionStart ?? 0;
+  let fim = area.selectionEnd ?? ini;
+  if (ini === fim) {
+    while (ini > 0 && PALAVRA.test(valor[ini - 1])) ini -= 1;
+    while (fim < valor.length && PALAVRA.test(valor[fim])) fim += 1;
+  }
+  if (ini === fim) {
+    envolverSelecao("*", "*");
+    return;
+  }
+  // A seleção pode incluir as marcas: o trecho grifado é o de dentro.
+  const selecionado = valor.slice(ini, fim);
+  if (selecionado.length > 4 && selecionado.startsWith("$*") && selecionado.endsWith("$*")) {
+    ini += 2;
+    fim -= 2;
+  } else if (selecionado.length > 2 && /^\*[^*]/.test(selecionado) && /[^*]\*$/.test(selecionado)) {
+    ini += 1;
+    fim -= 1;
+  }
+  const duplo = valor.slice(ini - 2, ini) === "$*" && valor.slice(fim, fim + 2) === "$*";
+  const simples = !duplo && valor[ini - 1] === "*" && valor[fim] === "*";
+  let negrito = duplo || simples;
+  let italico = duplo;
+  const lembrado = estado.ultimoGrifo;
+  if (simples && lembrado && lembrado.ini === ini && lembrado.fim === fim && lembrado.valor === valor) {
+    ({ negrito, italico } = lembrado);
+  }
+  if (tipo === "negrito") negrito = !negrito;
+  else italico = !italico;
+  const largura = duplo ? 2 : simples ? 1 : 0;
+  const marca = negrito && italico ? "$*" : negrito || italico ? "*" : "";
+  const miolo = valor.slice(ini, fim);
+  area.focus();
+  trocarNoTexto({ de: ini - largura, ate: fim + largura, texto: `${marca}${miolo}${marca}` });
+  const novoIni = ini - largura + marca.length;
+  area.setSelectionRange(novoIni, novoIni + miolo.length);
+  estado.ultimoGrifo = { ini: novoIni, fim: novoIni + miolo.length, negrito, italico, valor: area.value };
 }
 
 function procurar(de, inicio) {
@@ -1047,17 +1300,6 @@ function palavraNoCursor() {
   return texto.slice(i, j);
 }
 
-function pontosPerkins() {
-  return estado.perkins.map((aceso) => (aceso ? "1" : "0")).join("");
-}
-
-function mostrarPerkins() {
-  const dots = pontosPerkins();
-  $("perkins-mostra").textContent = unicodeDaCela(dots);
-}
-
-const TECLAS_PERKINS = { f: 0, d: 1, s: 2, j: 3, k: 4, l: 5 };
-
 function acao(nome) {
   fecharMenus();
   const variantes = { "var-1": "<M| >", "var-2": "<Mé >", "var-3": "<M|l >" };
@@ -1066,7 +1308,6 @@ function acao(nome) {
     "sep-media": "               õoõoõoõoõoõoõoõoõoõoõoõo",
     "sep-pequena": "               ::::::::::::::::::::::::",
   };
-  const graficos = { "pagina-graf": "<G  1 ", "embutir-graf": "<G+ 1 ", "intercalar-graf": "<G* 1 " };
   if (nome === "novo") novo();
   else if (nome === "abrir") $("arquivo").click();
   else if (nome === "salvar") salvar();
@@ -1078,33 +1319,26 @@ function acao(nome) {
     estado.nome = nomeArquivo.trim();
     salvar();
   } else if (nome === "desfazer" || nome === "recortar" || nome === "copiar" || nome === "colar") editar(nome);
-  else if (nome === "copiar-meta") {
-    const meta = metaDaSelecao();
-    if (meta) navigator.clipboard.writeText(meta);
-  } else if (nome === "selecionar") {
+  else if (nome === "selecionar") {
     $("texto").focus();
     $("texto").select();
   } else if (nome === "localizar") $("localizar").showModal();
   else if (nome === "substituir") $("substituir-dialogo").showModal();
-  else if (nome === "dividir") {
-    if (!window.confirm("Essa função não tem retorno, salvou por garantia?")) return;
-    substituirTextoTodo(dividirLinhas(linhasDoTexto(), Number($("max-col").value) || 70).join("\n"));
-  } else if (nome === "pagina") inserirNaLinha("<P>");
+  else if (nome === "pagina") inserirNaLinha("<P>");
   else if (nome === "recuo-codigo") envolver("<R+>", "<R->");
   else if (nome === "ajuste-codigo") envolver("<F->", "<F+>");
   else if (nome === "silabas-codigo") envolver("<S->", "<S+>");
   else if (nome === "ingles-codigo") envolver("<I+>", "<I->");
-  else if (nome === "centrar") $("centrar-dialogo").showModal();
+  else if (nome === "centrar") alinharLinhas("centro");
+  else if (nome === "alinhar-esquerda") alinharLinhas("esquerda");
   else if (nome === "pag-tinta") {
     const numero = window.prompt("Número da página em tinta", "");
     if (numero && /^\d+$/.test(numero.trim())) inserirNaLinha(`<${numero.trim()}>`);
   } else if (nome === "anotacao") {
     const nota = window.prompt("Anotar", "");
     if (nota && nota.trim()) inserirNaLinha(`<*** ${nota.trim()} ***>`);
-  } else if (nome === "grifo") {
-    const marca = $("grifo").value === "composto" ? "$*" : "*";
-    envolverSelecao(marca, marca);
-  } else if (nome === "informatica") envolverSelecao("~,", "~,");
+  } else if (nome === "negrito" || nome === "italico") aplicarGrifo(nome);
+  else if (nome === "informatica") envolverSelecao("~,", "~,");
   else if (nome === "parenteses") envolverSelecao("?", "*");
   else if (nome === "nota-transcricao") {
     const area = $("texto");
@@ -1112,17 +1346,7 @@ function acao(nome) {
     else envolverSelecao("_`[", "_`]");
   } else if (variantes[nome]) envolver(variantes[nome], "<M>");
   else if (separadores[nome]) inserirNaLinha(separadores[nome]);
-  else if (graficos[nome]) {
-    const arquivo = window.prompt("Arquivo gráfico", "");
-    if (arquivo && arquivo.trim()) inserirNaLinha(`${graficos[nome]}${arquivo.trim()}>`);
-  } else if (nome === "grafico-vazio") {
-    const medida = window.prompt("Quantas linhas e colunas alfanuméricas vai ocupar (no formato yy xx)?", "");
-    if (!medida || !medida.trim()) return;
-    const arquivo = window.prompt("Nome do arquivo .GRB a criar:", "");
-    if (!arquivo || !arquivo.trim()) return;
-    inserirNaLinha(`<G  1 ${arquivo.trim()}>`);
-    avisar("Criando gráfico vazio", `Gráfico vazio ${arquivo.trim()} foi marcado no texto (${medida.trim()}). O arquivo .GRB em si era criado pelo Braille Fácil no disco; este editor não grava esse binário. Use o menu Gráficos para escolher como incluí-lo.`);
-  } else if (nome === "quadrinho") $("quadro").showModal();
+  else if (nome === "quadrinho") $("quadro").showModal();
   else if (nome === "quadrinho-ajuda") aplicarQuadrinho("ajuda");
   else if (nome === "configurar") $("config").showModal();
   else if (nome === "fonte") {
@@ -1132,32 +1356,21 @@ function acao(nome) {
       desenharModoPareado(false);
       persistir();
     }
-  } else if (nome === "cinco") {
-    $("cinco-linhas").checked = !$("cinco-linhas").checked;
-    desenharCinco();
   } else if (nome === "revisor") {
     const ligado = !$("texto").readOnly;
     $("texto").readOnly = ligado;
     $("pareada").classList.toggle("revisor", ligado);
     $("st-revisor").textContent = ligado ? "Modo de revisão - apenas leitura" : "";
-  } else if (nome === "atualizar" || nome === "visualizar") desenhar(true);
-  else if (nome === "simbolos") {
+  } else if (nome === "simbolos") {
     preencherSimbolos();
     $("simbolos").showModal();
-  } else if (nome === "perkins") {
-    estado.perkins = [0, 0, 0, 0, 0, 0];
-    mostrarPerkins();
-    $("perkins").showModal();
-  } else if (nome === "retoques") {
-    prepararRetoques();
-    $("retoques").showModal();
   } else if (nome === "tabela") {
     preencherTabela();
     $("tabela").showModal();
-  } else if (nome === "dos") substituirTextoTodo(converter($("texto").value, paraDos));
-  else if (nome === "windows") substituirTextoTodo(converter($("texto").value, paraWindows));
-  else if (nome === "eliminar") substituirTextoTodo(expandirTab($("texto").value));
-  else if (nome === "minuscula" || nome === "maiuscula-texto") {
+  } else if (nome === "codigo-unificado" || nome === "codigo-antigo") {
+    $("codigo").value = nome === "codigo-antigo" ? "antigo" : "unificado";
+    $("codigo").dispatchEvent(new Event("change"));
+  } else if (nome === "minuscula" || nome === "maiuscula-texto") {
     const area = $("texto");
     const ini = area.selectionStart;
     const fim = area.selectionEnd;
@@ -1165,71 +1378,32 @@ function acao(nome) {
     const trecho = area.value.slice(ini, fim);
     substituir(ini, fim, nome === "minuscula" ? trecho.toLocaleUpperCase("pt") : trecho.toLocaleLowerCase("pt"));
     area.setSelectionRange(ini, fim);
-  } else if (nome === "folhear") {
-    const area = $("texto");
-    const daqui = area.value.indexOf("<***", area.selectionEnd);
-    const onde = daqui >= 0 ? daqui : area.value.indexOf("<***");
-    if (onde < 0) {
-      avisar("Anotações", "Não há anotações neste texto.");
-      return;
-    }
-    const fecha = area.value.indexOf("***>", onde);
-    area.focus();
-    area.setSelectionRange(onde, fecha < 0 ? onde + 4 : fecha + 4);
-  } else if (nome === "imprimir-texto" || nome === "imprimir-braille") {
-    imprimir(nome === "imprimir-texto" ? "texto" : "braille");
-  } else if (nome === "braille-word") exportarWord(false);
-  else if (nome === "tinta-word") exportarTinta();
+  } else if (nome === "tinta-word") exportarTinta();
   else if (nome === "salvar-config") {
     const dados = JSON.parse(localStorage.getItem(CHAVE) || "{}");
     delete dados.texto;
-    baixar("brfacil-config.json", JSON.stringify(dados, null, 2), "application/json");
+    baixar("brauna-config.json", JSON.stringify(dados, null, 2), "application/json");
   } else if (nome === "carregar-config") $("arquivo-config").click();
-  else if (nome === "sair") {
-    if ($("texto").value && !window.confirm("Fechando o programa, tudo foi salvo ?")) return;
-    $("texto").value = "";
-    estado.nome = "sem título";
-    estado.sujo = false;
-    desenhar();
-    persistir();
-  } else if (nome === "puma") {
-    avisar("Chamar Puma 7", "O Braille Fácil gravava um temporário e abria o programa Puma. Esse outro programa não faz parte deste editor.");
-  } else if (nome === "pintor") {
-    avisar("Pintor Braille", "O Braille Fácil abria o editor gráfico Pintor. Ele não faz parte deste editor. Dá para incluir um gráfico já pronto pelos comandos Página gráfica, Intercalar e Embutir.");
-  } else if (nome === "monet") {
-    avisar("Monet", "O Braille Fácil abria o programa Monet. Ele não faz parte deste editor.");
-  } else if (nome === "impressora") {
-    avisar("Impressora Braille", "A escolha da impressora braille e o envio para a máquina ficavam no Braille Fácil. Aqui, Imprimir em Braille usa a impressão do navegador.");
-  } else if (nome === "diretorios") {
-    avisar("Diretórios", "As tabelas de tradução já estão neste editor. Não há pasta separada de ambcode ou brailex para apontar.");
+  else if (nome === "impressora") {
+    avisar("Impressora Braille", "Este editor ainda não gera o arquivo para a impressora braille.");
   } else if (nome === "ortografia-config" || nome === "carregar-dic" || nome === "liberar-dic" || nome === "procurar-erro" || nome === "alternativas" || nome === "acrescentar" || nome === "inibir") {
     ortografia(nome);
-  } else if (nome === "alto-relevo") {
-    const texto = window.prompt("Texto em alto-relevo", "");
-    if (!texto || !texto.trim()) return;
-    const nomeArquivo = texto.trim().slice(0, 24).replaceAll(" ", "_");
-    inserirNaLinha(`<G  1 ${nomeArquivo}>`);
-    avisar("Inserir texto em alto-relevo", "O Braille Fácil gerava um gráfico com a fonte escolhida e inseria o comando. Aqui o comando foi inserido; o arquivo gráfico não é gerado.");
   } else if (nome === "texto-tabela") {
-    avisar("Texto para Tabela", "O Braille Fácil abria o assistente de configuração de tabelas. Esse assistente não está neste editor.");
-  } else if (nome === "macro") {
-    avisar("Processador de macros", "O Braille Fácil abria o processador de macros. Ele não está neste editor.");
+    avisar("Texto para Tabela", "Texto para Tabela ainda não está pronto: vai ser refeito.");
   } else if (nome === "procurar-atualizacao" || nome === "instalar-atualizacao") {
-    avisar("Braille Fácil", "Em breve!!!");
+    avisar("Braúna", "Em breve!!!");
   } else if (nome === "atualizacao-auto") {
     estado.atualizacaoAuto = !estado.atualizacaoAuto;
     persistir();
     avisar("Atualizações automáticas", estado.atualizacaoAuto ? "A preferência ficou ligada. Este editor não consulta a rede." : "A preferência ficou desligada.");
-  } else if (nome === "manual") {
-    avisar("Manual do Braille Fácil", "O manual que acompanha o programa antigo está em C:\\Users\\nmesquita\\Documents\\rea bf\\brfacil\\BRFACIL.DOC e em brfacil.chm.");
   } else if (nome === "sobre") {
-    avisar("Braille Fácil", "Braille Fácil 5.0. Este editor mantém o texto à esquerda e o braille à direita, e aplica os comandos recuperados do programa antigo.");
+    avisar("Braúna", "Braúna, editor braille: a tinta fica à esquerda e o braille à direita, linha a linha.");
   }
 }
 
 function ortografia(nome) {
   if (nome === "ortografia-config") {
-    avisar("Verificador ortográfico", "O corretor do Braille Fácil lê os arquivos diciona.dic, diciona.sug, diciona.nom, diciona.exc e diciona.suf. Esse formato próprio não é uma lista de palavras. Em Carregar dicionário dá para abrir uma lista, uma palavra por linha ou separada por espaço.");
+    avisar("Verificador ortográfico", "O verificador usa um dicionário em forma de lista de palavras. Em Carregar dicionário dá para abrir uma lista, uma palavra por linha ou separada por espaço.");
     return;
   }
   if (nome === "liberar-dic") {
@@ -1248,7 +1422,7 @@ function ortografia(nome) {
       arquivo.text().then((texto) => {
         const palavras = texto.split(/\s+/).map((item) => item.toLocaleLowerCase("pt")).filter((item) => /^[\p{L}'-]+$/u.test(item));
         if (palavras.length < 20) {
-          avisar("Dicionário", "Este arquivo não é uma lista de palavras. O diciona.dic do Braille Fácil usa outro formato e não foi lido.");
+          avisar("Dicionário", "Este arquivo não é uma lista de palavras e não foi lido.");
           return;
         }
         estado.dicionario = new Set(palavras);
@@ -1271,7 +1445,7 @@ function ortografia(nome) {
     return;
   }
   if (nome === "alternativas") {
-    avisar("Outras alternativas", "A lista de sugestões ficava em diciona.sug. Esse arquivo não está carregado.");
+    avisar("Outras alternativas", "Ainda não há sugestões de alternativas.");
     return;
   }
   const area = $("texto");
@@ -1288,21 +1462,6 @@ function ortografia(nome) {
     }
   }
   avisar("Ortografia", "Busca terminada");
-}
-
-function prepararRetoques() {
-  const caixa = $("retoques-pontos");
-  caixa.replaceChildren();
-  const nomes = ["1", "2", "3", "4", "5", "6"];
-  nomes.forEach((nome) => {
-    const rotulo = document.createElement("label");
-    rotulo.className = "cheque";
-    const caixaPonto = document.createElement("input");
-    caixaPonto.type = "checkbox";
-    caixaPonto.dataset.ponto = nome;
-    rotulo.append(caixaPonto, document.createTextNode(` ponto ${nome}`));
-    caixa.append(rotulo);
-  });
 }
 
 function preencherTabela() {
@@ -1325,7 +1484,6 @@ function preencherTabela() {
 }
 
 restaurar();
-montarRecentes();
 preencherSimbolos();
 irAoInicio();
 desenhar();
@@ -1354,10 +1512,64 @@ $("texto").addEventListener("keydown", (evento) => {
   if (desfazer && desfazerTroca()) evento.preventDefault();
 });
 $("texto").addEventListener("keydown", teclaPareada);
+// Numa linha vazia, o "<" começa um comando na coluna 1 (sai o recuo que o Enter pôs). No
+// beforeinput, vale para qualquer jeito de digitar, inclusive um comando inteiro de uma vez.
+$("texto").addEventListener("beforeinput", (evento) => {
+  const area = $("texto");
+  if (estado.trocaDoPrograma) return;
+  // Digitar ou apagar por cima de uma seleção que pega códigos: eles ficam no lugar.
+  const tipo = evento.inputType;
+  if (area.selectionStart !== area.selectionEnd && !area.readOnly && (tipo.startsWith("delete") || tipo === "insertText" || tipo === "insertLineBreak" || tipo === "insertParagraph")) {
+    const novo = tipo.startsWith("delete") ? "" : tipo === "insertText" ? evento.data ?? "" : "\n";
+    if (trocarPreservandoCodigos(area.selectionStart, area.selectionEnd, novo)) {
+      evento.preventDefault();
+      return;
+    }
+  }
+  if (evento.inputType !== "insertText" || !evento.data?.startsWith("<") || area.readOnly || area.selectionStart !== area.selectionEnd) return;
+  const troca = aoDigitarMenor(area.value, area.selectionStart, evento.data);
+  if (!troca) return;
+  evento.preventDefault();
+  trocarNoTexto(troca);
+});
+// Recortar e colar pelo teclado (Ctrl+X, Ctrl+V) com códigos na seleção: o texto sai, os
+// códigos ficam. O recortado vai inteiro para a área de transferência.
+$("texto").addEventListener("cut", (evento) => {
+  const area = $("texto");
+  const { selectionStart: de, selectionEnd: ate } = area;
+  if (area.readOnly || !trocaPreservandoCodigos(area.value, de, ate, "")) return;
+  evento.preventDefault();
+  evento.clipboardData.setData("text/plain", area.value.slice(de, ate));
+  trocarPreservandoCodigos(de, ate, "");
+});
+$("texto").addEventListener("paste", (evento) => {
+  const area = $("texto");
+  const trecho = evento.clipboardData?.getData("text/plain") ?? "";
+  if (area.readOnly || !trecho) return;
+  if (trocarPreservandoCodigos(area.selectionStart, area.selectionEnd, trecho.replace(/\r\n?/g, "\n"))) evento.preventDefault();
+});
+// Desfazer e refazer selecionam o trecho que voltou; se ele termina numa linha de código (um
+// código arrastado, um <P> apagado), o cursor sai dela, para o código não ficar aberto.
+$("texto").addEventListener("input", (evento) => {
+  if (evento.inputType !== "historyUndo" && evento.inputType !== "historyRedo") return;
+  if (pareado.codigoAberto) return;
+  const area = $("texto");
+  const fim = area.selectionEnd;
+  const ini = area.value.lastIndexOf("\n", fim - 1) + 1;
+  let ate = area.value.indexOf("\n", fim);
+  if (ate < 0) ate = area.value.length;
+  if (ehComando(area.value.slice(ini, ate))) cursorForaDoCodigo(fim, 1);
+});
+$("aviso-paginas-ver").addEventListener("click", irParaPaginaCurta);
+$("aviso-paginas-fechar").addEventListener("click", () => {
+  pareado.paginasCurtas = new Set();
+  mostrarAvisoDePaginas();
+  $("texto").focus({ preventScroll: true });
+});
 for (const evento of ["click", "keyup", "change", "input"]) document.addEventListener(evento, sincronizarPareado);
 document.addEventListener("close", sincronizarPareado, true);
 // O Chrome zera a seleção do textarea ao fechar um diálogo e devolver o foco a ele, quando o
-// texto mudou com o diálogo aberto (Perkins, símbolos...). Guarda a seleção e devolve.
+// texto mudou com o diálogo aberto (símbolos...). Guarda a seleção e devolve.
 const fecharDialogo = HTMLDialogElement.prototype.close;
 HTMLDialogElement.prototype.close = function fecharGuardandoSelecao(...argumentos) {
   const area = $("texto");
@@ -1405,8 +1617,231 @@ function seguirArrasto() {
   arrasto.rolagem = passo ? window.requestAnimationFrame(seguirArrasto) : 0;
 }
 
+// Os atalhos do menu do botão direito seguem o sistema (⌘ no Mac, Ctrl+ no Windows).
+if (!/Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent)) {
+  for (const atalho of document.querySelectorAll("#menu-contexto .atalho")) atalho.textContent = atalho.textContent.replace("⌘", "Ctrl+");
+}
+
+// Botão direito no editor: recortar, copiar, colar e selecionar tudo. Clicar fora da seleção
+// leva o cursor para lá antes, como num editor comum.
+$("pareada").addEventListener("contextmenu", (evento) => {
+  evento.preventDefault();
+  fecharMenus();
+  const area = $("texto");
+  const indice = indiceDoClique(evento);
+  if (indice != null && (indice < area.selectionStart || indice > area.selectionEnd)) {
+    area.focus({ preventScroll: true });
+    irParaIndice(indice);
+    atualizarStatus();
+    posicionarCursorPareado(true);
+  }
+  const menu = $("menu-contexto");
+  const vazio = area.selectionEnd <= area.selectionStart;
+  menu.querySelector("[data-acao=recortar]").disabled = vazio || area.readOnly;
+  menu.querySelector("[data-acao=copiar]").disabled = vazio;
+  menu.querySelector("[data-acao=colar]").disabled = area.readOnly;
+  menu.hidden = false;
+  const largura = menu.offsetWidth;
+  const altura = menu.offsetHeight;
+  menu.style.left = `${Math.min(evento.clientX, window.innerWidth - largura - 4)}px`;
+  menu.style.top = `${Math.min(evento.clientY, window.innerHeight - altura - 4)}px`;
+});
+
+// Códigos (<P>, <t título>, <R+>, comentários...) não mudam ao editar o texto. Para alterar um,
+// duplo clique na etiqueta dele (ou no rótulo do <P>): a linha do código abre ali mesmo, na
+// página, com o cursor no fim. Enter ou Esc (que desfaz o que foi mudado) fecham; sair da linha
+// também fecha. Esvaziada, a linha sai do texto junto com o código.
+function codigoNoClique(alvo) {
+  const etiqueta = alvo.closest(".etiqueta");
+  if (etiqueta) return pareado.faixas[Number(etiqueta.dataset.alvo)]?.linha ?? null;
+  const quebra = alvo.closest(".faixa-quebra");
+  if (quebra && quebra.dataset.linha != null) return Number(quebra.dataset.linha);
+  return null;
+}
+
+function linhaDoTexto(valor, inicios, linha) {
+  return valor.slice(inicios[linha], (inicios[linha + 1] ?? valor.length + 1) - 1);
+}
+
+function abrirCodigo(linha) {
+  const area = $("texto");
+  area.focus({ preventScroll: true });
+  if (area.readOnly) return;
+  if (pareado.sujo || pareado.texto !== area.value) reconstruirPareado();
+  const inicios = pareado.inicios;
+  if (inicios[linha] == null) return;
+  const original = linhaDoTexto(area.value, inicios, linha);
+  pareado.codigoAberto = { linha, original, linhas: inicios.length };
+  const fim = inicios[linha] + original.length;
+  area.setSelectionRange(fim, fim);
+  pareado.ultimoIndice = fim;
+  pareado.colunaAlvo = null;
+  atualizarStatus();
+  posicionarCursorPareado(true);
+}
+
+// O código aberto ficou vazio? Tira a linha. Só quando o número de linhas é o mesmo de quando
+// abriu: senão a linha `linha` pode já ser outra. Devolve a troca feita (ou null).
+function tirarCodigoVazio() {
+  const aberto = pareado.codigoAberto;
+  pareado.codigoAberto = null;
+  const area = $("texto");
+  const inicios = iniciosDasLinhas(area.value);
+  if (!aberto || inicios.length !== aberto.linhas || linhaDoTexto(area.value, inicios, aberto.linha).trim() !== "") return null;
+  const de = inicios[aberto.linha + 1] != null ? inicios[aberto.linha] : Math.max(0, inicios[aberto.linha] - 1);
+  const ate = inicios[aberto.linha + 1] ?? area.value.length;
+  const cursor = area.selectionStart;
+  estado.trocaDoPrograma = true;
+  try {
+    trocarNoTexto({ de, ate, texto: "" });
+  } finally {
+    estado.trocaDoPrograma = false;
+  }
+  const depois = cursor >= ate ? cursor - (ate - de) : Math.min(cursor, de);
+  area.setSelectionRange(depois, depois);
+  return { de, ate };
+}
+
+// Enter ou Esc no código aberto: fecha, e o cursor desce para a linha seguinte (ou sobe, se o
+// código era a última linha). Esc devolve o texto que o código tinha ao abrir.
+function fecharCodigo(desfazer) {
+  const aberto = pareado.codigoAberto;
+  const area = $("texto");
+  let inicios = iniciosDasLinhas(area.value);
+  if (desfazer && inicios.length === aberto.linhas) {
+    const atual = linhaDoTexto(area.value, inicios, aberto.linha);
+    if (atual !== aberto.original) {
+      estado.trocaDoPrograma = true;
+      try {
+        trocarNoTexto({ de: inicios[aberto.linha], ate: inicios[aberto.linha] + atual.length, texto: aberto.original });
+      } finally {
+        estado.trocaDoPrograma = false;
+      }
+    }
+  }
+  const tirada = tirarCodigoVazio();
+  inicios = iniciosDasLinhas(area.value);
+  if (tirada) {
+    cursorForaDoCodigo(tirada.de, tirada.de < area.value.length ? 1 : -1);
+  } else if (inicios[aberto.linha + 1] != null) {
+    cursorForaDoCodigo(inicios[aberto.linha + 1], 1);
+  } else {
+    cursorForaDoCodigo(Math.max(0, inicios[aberto.linha] - 1), -1);
+  }
+  atualizarStatus();
+  posicionarCursorPareado(true);
+}
+
+// Arrastar um código: segurar a etiqueta (ou o rótulo do <P>) e soltar entre duas linhas. O
+// código vai inteiro para lá, numa linha só dele, antes ou depois da linha do texto apontada
+// (nunca no meio de um parágrafo). Uma linha amarela mostra onde ele vai cair. Um passo do Ctrl+Z.
+const arrastoCodigo = { linha: null, x: 0, y: 0, ativo: false, destino: null, marca: null };
+
+const primeiraLinhaDaFaixa = (faixa) => (faixa?.trechos?.length ? faixa.trechos[0].linha : faixa?.linha ?? null);
+const ultimaLinhaDaFaixa = (faixa) => (faixa?.trechos?.length ? faixa.trechos[faixa.trechos.length - 1].linha : faixa?.linha ?? null);
+
+// A linha do texto antes da qual o código entra, pelo ponto (x, y) da tela; null fora do editor.
+function destinoDoCodigo(x, y) {
+  const raiz = $("pareada");
+  const caixa = raiz.getBoundingClientRect();
+  const alvo = document.elementFromPoint(Math.min(Math.max(x, caixa.left + 2), caixa.right - 2), Math.min(Math.max(y, caixa.top + 2), caixa.bottom - 2));
+  if (!alvo || !raiz.contains(alvo)) return null;
+  const etiqueta = alvo.closest(".etiqueta");
+  if (etiqueta) return pareado.faixas[Number(etiqueta.dataset.alvo)]?.linha ?? null;
+  const elemento = alvo.closest(".faixa");
+  if (!elemento || elemento.dataset.i == null) return null;
+  const indice = Number(elemento.dataset.i);
+  const faixa = pareado.faixas[indice];
+  // Cabeçalho e quebra automática: o código vai para o começo da página.
+  if (primeiraLinhaDaFaixa(faixa) == null) {
+    const proxima = vizinhaVisivel(indice, 1);
+    return proxima == null ? pareado.inicios.length : primeiraLinhaDaFaixa(pareado.faixas[proxima]);
+  }
+  const caixaDaFaixa = elemento.getBoundingClientRect();
+  const cima = y < caixaDaFaixa.top + caixaDaFaixa.height / 2;
+  return cima ? primeiraLinhaDaFaixa(faixa) : ultimaLinhaDaFaixa(faixa) + 1;
+}
+
+// A linha amarela fica no topo da primeira faixa que mostra a linha `destino` (ou o que vem
+// depois dela).
+function marcarDestino(destino) {
+  const janela = janelaPareada();
+  let indice = pareado.faixas.findIndex((faixa) => (faixa.linha ?? -1) >= destino || faixa.trechos?.some((trecho) => trecho.linha >= destino));
+  if (indice < 0) indice = pareado.faixas.length;
+  if (!arrastoCodigo.marca) {
+    arrastoCodigo.marca = document.createElement("div");
+    arrastoCodigo.marca.className = "destino-codigo";
+  }
+  if (!arrastoCodigo.marca.isConnected) $("pareada").append(arrastoCodigo.marca);
+  arrastoCodigo.marca.style.top = `${janela.topo(indice)}px`;
+}
+
+function soltarCodigo() {
+  const { linha, destino } = arrastoCodigo;
+  const area = $("texto");
+  const troca = destino == null ? null : moverLinha(area.value, linha, destino);
+  if (!troca) return;
+  estado.trocaDoPrograma = true;
+  try {
+    trocarNoTexto(troca);
+  } finally {
+    estado.trocaDoPrograma = false;
+  }
+  // O cursor vai para a linha logo depois do código, onde ele caiu: a tela segue o cursor, e
+  // deixá-lo onde estava (no começo do livro, por exemplo) levava a tela para longe.
+  const n = Math.abs(troca.desloca);
+  const depois = troca.desloca > 0 ? troca.de + n : troca.ate + 1;
+  if (depois <= area.value.length) cursorForaDoCodigo(depois, 1);
+  else cursorForaDoCodigo(Math.max(0, troca.ate - n), -1);
+  atualizarStatus();
+  posicionarCursorPareado(true);
+}
+
+window.addEventListener("mousemove", (evento) => {
+  if (arrastoCodigo.linha == null) return;
+  if (!(evento.buttons & 1)) {
+    arrastoCodigo.linha = null;
+    return;
+  }
+  const raiz = $("pareada");
+  if (!arrastoCodigo.ativo) {
+    if (Math.hypot(evento.clientX - arrastoCodigo.x, evento.clientY - arrastoCodigo.y) < 5) return;
+    arrastoCodigo.ativo = true;
+    raiz.classList.add("arrastando-codigo");
+  }
+  // Perto da borda de cima ou de baixo, a tela rola.
+  const caixa = raiz.getBoundingClientRect();
+  if (evento.clientY < caixa.top + 24) raiz.scrollTop -= 20;
+  else if (evento.clientY > caixa.bottom - 24) raiz.scrollTop += 20;
+  janelaPareada().desenhar();
+  arrastoCodigo.destino = destinoDoCodigo(evento.clientX, evento.clientY);
+  if (arrastoCodigo.destino == null) arrastoCodigo.marca?.remove();
+  else marcarDestino(arrastoCodigo.destino);
+});
+window.addEventListener("mouseup", () => {
+  if (arrastoCodigo.linha == null) return;
+  const ativo = arrastoCodigo.ativo;
+  $("pareada").classList.remove("arrastando-codigo");
+  arrastoCodigo.marca?.remove();
+  if (ativo) soltarCodigo();
+  arrastoCodigo.linha = null;
+  arrastoCodigo.ativo = false;
+});
+
 $("pareada").addEventListener("mousedown", (evento) => {
   if (evento.button !== 0) return;
+  const codigo = codigoNoClique(evento.target);
+  if (codigo != null) {
+    // Um clique não faz nada (o cursor não entra no código); o segundo abre a linha dele.
+    // Segurar e arrastar leva o código para outro lugar.
+    evento.preventDefault();
+    if (evento.detail >= 2) abrirCodigo(codigo);
+    else {
+      $("texto").focus({ preventScroll: true });
+      Object.assign(arrastoCodigo, { linha: codigo, x: evento.clientX, y: evento.clientY, ativo: false, destino: null });
+    }
+    return;
+  }
   const indice = indiceDoClique(evento);
   evento.preventDefault();
   $("texto").focus({ preventScroll: true });
@@ -1440,7 +1875,15 @@ window.addEventListener("mouseup", () => {
   if (arrasto.rolagem) window.cancelAnimationFrame(arrasto.rolagem);
   arrasto.rolagem = 0;
 });
+// Configurar > Codificação: o menu marca a escolhida; o select escondido guarda o valor.
+function marcarCodificacao() {
+  const antigo = $("codigo").value === "antigo";
+  document.querySelector("[data-acao=codigo-antigo]").setAttribute("aria-checked", String(antigo));
+  document.querySelector("[data-acao=codigo-unificado]").setAttribute("aria-checked", String(!antigo));
+}
+marcarCodificacao();
 $("codigo").addEventListener("change", () => {
+  marcarCodificacao();
   desenhar();
   persistir();
 });
@@ -1482,26 +1925,17 @@ $("arquivo").addEventListener("change", () => {
   if (!arquivo) return;
   lerArquivo(arquivo).then((texto) => {
     $("texto").value = texto;
+    pareado.semBase = true;
     estado.nome = arquivo.name;
     estado.sujo = false;
     irAoInicio();
     desenhar(true);
     persistir();
-    lembrarRecente();
   });
 });
 
 document.addEventListener("keydown", (evento) => {
-  if (evento.key === "F12") {
-    evento.preventDefault();
-    desenhar();
-  } else if (evento.key === "F9") {
-    evento.preventDefault();
-    desenhar(true);
-  } else if (evento.key === "F5") {
-    evento.preventDefault();
-    acao("cinco");
-  } else if (evento.ctrlKey && evento.key.toLowerCase() === "f") {
+  if (evento.ctrlKey && evento.key.toLowerCase() === "f") {
     evento.preventDefault();
     acao("localizar");
   } else if (evento.ctrlKey && evento.key.toLowerCase() === "a") {
@@ -1520,7 +1954,6 @@ $("config-fechar").addEventListener("click", () => {
   desenhar();
   persistir();
 });
-$("cinco-linhas").addEventListener("change", desenharCinco);
 $("aviso-fechar").addEventListener("click", () => $("aviso").close());
 $("tinta-fechar").addEventListener("click", () => $("tinta-dialogo").close());
 $("tinta-salvar-relatorio").addEventListener("click", () => {
@@ -1533,58 +1966,11 @@ $("remover-quebras-ok").addEventListener("click", () => {
 });
 $("localizar-fechar").addEventListener("click", () => $("localizar").close());
 $("substituir-fechar").addEventListener("click", () => $("substituir-dialogo").close());
-$("centrar-cancela").addEventListener("click", () => $("centrar-dialogo").close());
-$("centrar-fisica").addEventListener("click", () => {
-  $("centrar-dialogo").close();
-  centrarEscolha(true);
-});
-$("centrar-espacos").addEventListener("click", () => {
-  $("centrar-dialogo").close();
-  centrarEscolha(false);
-});
 $("quadro-cancela").addEventListener("click", () => $("quadro").close());
 $("quadro-ok").addEventListener("click", () => {
   const tipo = document.querySelector("input[name=quadro]:checked")?.value || "padrao";
   $("quadro").close();
   aplicarQuadrinho(tipo);
-});
-$("perkins-fechar").addEventListener("click", () => $("perkins").close());
-$("perkins-inserir").addEventListener("click", () => {
-  const dots = pontosPerkins();
-  const meta = metaDePontos(dots);
-  const caractere = meta == null ? unicodeDaCela(dots) : caractereMeta(meta);
-  const area = $("texto");
-  area.setRangeText(caractere, area.selectionStart, area.selectionEnd, "end");
-  estado.sujo = true;
-  desenhar();
-  persistir();
-  estado.perkins = [0, 0, 0, 0, 0, 0];
-  mostrarPerkins();
-});
-$("perkins").addEventListener("keydown", (evento) => {
-  const indice = TECLAS_PERKINS[evento.key.toLowerCase()];
-  if (evento.key === " ") {
-    evento.preventDefault();
-    estado.perkins = [0, 0, 0, 0, 0, 0];
-    mostrarPerkins();
-    return;
-  }
-  if (indice == null) return;
-  evento.preventDefault();
-  estado.perkins[indice] = estado.perkins[indice] ? 0 : 1;
-  mostrarPerkins();
-});
-$("retoques-fechar").addEventListener("click", () => $("retoques").close());
-$("retoques-aplicar").addEventListener("click", () => {
-  const bits = [1, 2, 3, 4, 5, 6].map((ponto) => (
-    $("retoques-pontos").querySelector(`[data-ponto="${ponto}"]`).checked ? "1" : "0"
-  )).join("");
-  const meta = metaDePontos(bits);
-  const caractere = meta == null ? unicodeDaCela(bits) : caractereMeta(meta);
-  const area = $("texto");
-  const fim = area.selectionEnd === area.selectionStart ? area.selectionStart + 1 : area.selectionEnd;
-  substituir(area.selectionStart, Math.min(fim, area.value.length), caractere);
-  $("retoques").close();
 });
 $("tabela-fechar").addEventListener("click", () => $("tabela").close());
 $("busca-proxima").addEventListener("click", () => {

@@ -1,10 +1,21 @@
+import { classificar } from "./comandos.js?edicao=27";
+import { marcasPorLinha } from "./faixas.js?edicao=35";
+
 // Cursor do editor pareado (etapa 3). O texto puro continua sendo o modelo: o cursor é uma
 // posição nele. Estas funções puras convertem essa posição na faixa e na coluna da tinta onde
 // ele aparece, e o contrário. Sem DOM, para poder testar no node.
 
-// Faixas onde o cursor pode ficar. Cabeçalho, quebra, nota e linhas de código ocultas não.
+// Faixas onde o cursor pode ficar. Cabeçalho, quebra e nota não. As linhas de comando e as que
+// o braille omite aparecem na tinta e também recebem o cursor.
 function editavel(faixa) {
-  return faixa.tipo === "texto" || faixa.tipo === "branco" || faixa.tipo === "comentario";
+  return faixa.tipo === "texto" || faixa.tipo === "branco" || faixa.tipo === "comentario"
+    || faixa.tipo === "comando" || faixa.tipo === "oculta";
+}
+
+// Linha de código (<R+>, <T título>, comentário): juntá-la com a vizinha estragaria o código.
+function ehComando(linha) {
+  const comando = linha?.startsWith("<") ? classificar(linha) : null;
+  return Boolean(comando) && !comando.imprimir;
 }
 
 function iniciosDasLinhas(texto) {
@@ -88,9 +99,9 @@ function vizinhaEditavel(faixas, faixa, passo) {
   return null;
 }
 
-// Faixa que representa uma linha do texto sem lugar para o cursor: código oculto ou <P>.
+// Faixa que representa uma linha do texto sem lugar para o cursor: o <P> (e o <T+n>).
 function escondida(faixa) {
-  return faixa.tipo === "comando" || faixa.tipo === "oculta" || (faixa.tipo === "quebra" && faixa.linha != null);
+  return faixa.tipo === "quebra" && faixa.linha != null;
 }
 
 // Linha do texto que o editor não mostra como texto: o cursor não pode ficar nela.
@@ -99,11 +110,20 @@ function linhaEscondida(faixas, linha) {
     && !faixas.some((faixa) => (faixa.linha === linha && editavel(faixa)) || faixa.trechos?.some((trecho) => trecho.linha === linha));
 }
 
-// Tira o cursor de uma linha escondida, andando na direção do movimento.
-function foraDeLinhaEscondida(faixas, inicios, texto, indice, direcao) {
+// Linha onde o cursor não entra: a do <P> e as linhas de código, que viram etiqueta e só se
+// editam pelo duplo clique. `aberta` é a exceção: o código que o cursor está escrevendo agora
+// (ele só vira etiqueta quando o cursor sai da linha).
+function linhaProtegida(faixas, inicios, texto, linha, aberta = null) {
+  if (linha === aberta) return false;
+  const fim = (inicios[linha + 1] ?? texto.length + 1) - 1;
+  return ehComando(texto.slice(inicios[linha], fim)) || linhaEscondida(faixas, linha);
+}
+
+// Tira o cursor de uma linha protegida, andando na direção do movimento.
+function foraDeLinhaEscondida(faixas, inicios, texto, indice, direcao, aberta = null) {
   let linha = linhaDoIndice(inicios, indice);
   let guarda = inicios.length;
-  while (linhaEscondida(faixas, linha) && guarda > 0) {
+  while (linhaProtegida(faixas, inicios, texto, linha, aberta) && guarda > 0) {
     guarda -= 1;
     if (direcao >= 0) {
       if (linha + 1 >= inicios.length) break;
@@ -115,13 +135,19 @@ function foraDeLinhaEscondida(faixas, inicios, texto, indice, direcao) {
       indice = (inicios[linha + 1] ?? texto.length + 1) - 1;
     }
   }
-  if (linhaEscondida(faixas, linha) && direcao >= 0) return foraDeLinhaEscondida(faixas, inicios, texto, indice, -1);
+  if (linhaProtegida(faixas, inicios, texto, linha, aberta) && direcao >= 0) return foraDeLinhaEscondida(faixas, inicios, texto, indice, -1, aberta);
   return indice;
 }
 
-// O que Backspace (passo -1) ou Delete (+1) devem apagar quando o cursor está na borda de uma
-// linha e a vizinha é uma linha escondida. Devolve { de, ate } a apagar, ou null para deixar o
-// textarea agir normalmente. <P> some inteiro; outros comandos não são apagados assim.
+// O que Backspace (passo -1) ou Delete (+1) devem fazer quando o cursor está na borda de uma
+// linha. Devolve null para deixar o textarea agir normalmente, ou { de, ate, cursor }: o trecho a
+// apagar (vazio: não faz nada) e onde o cursor fica depois.
+// Os códigos (<P>, <t título>, <R+>, comentários...) não mudam ao editar o texto: só pelo duplo
+// clique na etiqueta. Por isso, com um código ao lado:
+//   - linha em branco: ela é que sai, e o código fica;
+//   - linha com texto: nada acontece. A tecla não junta as linhas nem leva o cursor para dentro
+//     do código (antes, Delete no fim da capa passava por cima do <1>, apagava o <P> e deixava
+//     o cursor no <t título>, e as teclas seguintes desmanchavam o título).
 function apagarNaBorda(faixas, inicios, texto, indice, passo) {
   const linha = linhaDoIndice(inicios, indice);
   // Os espaços de abertura de parágrafo e os do fim da linha não aparecem como texto: o
@@ -130,23 +156,73 @@ function apagarNaBorda(faixas, inicios, texto, indice, passo) {
   const noInicio = /^ *$/.test(texto.slice(inicios[linha], indice));
   const noFim = /^ *$/.test(texto.slice(indice, fimDaLinha));
   if ((passo < 0 && !noInicio) || (passo > 0 && !noFim)) return null;
-  // Procura, na direção do movimento, a primeira linha visível ou o primeiro <P>.
-  let vizinha = linha + passo;
-  while (vizinha >= 0 && vizinha < inicios.length) {
-    const quebra = faixas.find((faixa) => faixa.tipo === "quebra" && faixa.forcada && faixa.linha === vizinha);
-    if (quebra) {
-      const de = inicios[vizinha];
-      const ate = inicios[vizinha + 1] ?? texto.length;
-      // Apaga a linha do <P> com uma das quebras de linha que a cercam.
-      if (inicios[vizinha + 1] != null) return { de, ate };
-      return { de: Math.max(0, de - 1), ate };
-    }
-    if (!linhaEscondida(faixas, vizinha)) break;
-    vizinha += passo;
+  const parado = { de: indice, ate: indice, cursor: indice };
+  if (ehComando(texto.slice(inicios[linha], fimDaLinha))) return parado;
+  const vizinha = linha + passo;
+  if (vizinha < 0 || vizinha >= inicios.length) return null;
+  if (!linhaProtegida(faixas, inicios, texto, vizinha)) return null;
+  if (texto.slice(inicios[linha], fimDaLinha).trim() !== "") return parado;
+  // A linha em branco sai com uma das quebras de linha que a cercam.
+  const de = inicios[linha + 1] != null ? inicios[linha] : Math.max(0, inicios[linha] - 1);
+  const ate = inicios[linha + 1] ?? texto.length;
+  // Backspace leva o cursor para cima (o fim da linha de cima; quem chama tira o cursor do
+  // código, se for o caso); Delete deixa onde estava, que agora é o começo da linha seguinte.
+  return { de, ate, cursor: passo < 0 ? Math.max(0, de - 1) : de };
+}
+
+// Apagar (ou trocar por `novo`) um trecho que atravessa linhas de código: o texto sai e os
+// códigos ficam no lugar, cada um na sua linha. O começo da primeira linha (com o que entra) fica
+// antes dos códigos, e o resto da última, depois deles. Devolve { de, ate, texto, cursor }, ou
+// null quando o trecho não pega nenhum código (aí vale a troca comum).
+function trocaPreservandoCodigos(texto, de, ate, novo = "") {
+  if (de >= ate) return null;
+  const ini = texto.lastIndexOf("\n", de - 1) + 1;
+  let fim = texto.indexOf("\n", ate);
+  if (fim < 0) fim = texto.length;
+  // Tudo numa linha só: a edição do próprio código que está sendo escrito, ou texto comum.
+  if (texto.lastIndexOf("\n", ate - 1) < ini) return null;
+  const linhas = texto.slice(ini, fim).split("\n");
+  const codigos = linhas.filter(ehComando);
+  if (!codigos.length) return null;
+  const primeiraCodigo = ehComando(linhas[0]);
+  const ultimaCodigo = ehComando(linhas[linhas.length - 1]);
+  const cabeca = primeiraCodigo ? "" : texto.slice(ini, de);
+  const cauda = ultimaCodigo ? "" : texto.slice(ate, fim);
+  const partes = [];
+  let cursor = null;
+  if (cabeca || (novo && !primeiraCodigo)) {
+    partes.push(cabeca + novo);
+    cursor = ini + cabeca.length + novo.length;
   }
-  if (vizinha === linha + passo) return null;
-  // Há linhas de código entre o cursor e o texto vizinho: não junta por cima delas.
-  return { de: indice, ate: indice };
+  partes.push(...codigos);
+  const sobra = primeiraCodigo ? novo : "";
+  if (sobra || cauda) {
+    const antes = partes.join("\n").length + 1;
+    partes.push(sobra + cauda);
+    if (cursor == null) cursor = ini + antes + sobra.length;
+  }
+  const trocado = partes.join("\n");
+  // Nada de texto sobrou em volta dos códigos: o cursor vai para o fim da linha de cima.
+  if (cursor == null) cursor = ini > 0 ? ini - 1 : ini + trocado.length;
+  return { de: ini, ate: fim, texto: trocado, cursor };
+}
+
+// Arrastar um código: tira a linha `de` do texto e a põe antes da linha `para` (o número de
+// linhas põe no fim). O tamanho do texto não muda: as linhas entre as duas posições só andam o
+// comprimento do código. Devolve { de, ate, texto, desloca } (desloca: quanto anda um índice que
+// estava entre as duas posições), ou null quando o código já está ali.
+function moverLinha(texto, de, para) {
+  const inicios = iniciosDasLinhas(texto);
+  if (de < 0 || de >= inicios.length || para < 0 || para > inicios.length || para === de || para === de + 1) return null;
+  const fimDe = (inicios[de + 1] ?? texto.length + 1) - 1;
+  const codigo = texto.slice(inicios[de], fimDe);
+  if (para < de) {
+    const meio = texto.slice(inicios[para], inicios[de] - 1);
+    return { de: inicios[para], ate: fimDe, texto: `${codigo}\n${meio}`, desloca: codigo.length + 1 };
+  }
+  const fim = para < inicios.length ? inicios[para] - 1 : texto.length;
+  const meio = texto.slice(inicios[de + 1], fim);
+  return { de: inicios[de], ate: fim, texto: `${meio}\n${codigo}`, desloca: -(codigo.length + 1) };
 }
 
 // Trecho do texto que a faixa cobre: { ini, fim } em índices do texto, ou null.
@@ -229,6 +305,55 @@ function selecaoNaFaixa(faixa, inicios, texto, de, ate) {
   return { tinta: [c0, c1], braille: k0 == null ? null : [k0, k1] };
 }
 
+const espacosIniciais = (linha) => (linha.match(/^ */) || [""])[0].length;
+const ehLinhaDeTexto = (linha) => linha != null && linha.trim() !== "" && !(linha.startsWith("<") && classificar(linha));
+
+// Enter: desce o que está depois do cursor para a linha de baixo, sem abrir parágrafo. No texto,
+// uma linha sem espaço no começo continua o parágrafo de cima (o Enter puro não mudava nada na
+// tela); por isso a linha nova começa com espaço:
+//   - texto comum: um espaço. A linha vai para a margem (o braille apaga esse espaço); com um
+//     espaço a mais, vira parágrafo com o recuo de dois.
+//   - dentro do <R+>: dois espaços, alinhada com as outras linhas do recuo; com um espaço a
+//     menos, vira item novo.
+//   - no <F-> (sem auto-ajuste), cada linha é uma linha: só a quebra.
+//   - no começo do texto da linha: ela desce, e fica uma linha em branco no lugar.
+//   - numa linha de comando ou comentário: a linha nova vem depois dela, sem partir o código.
+//   - no fim da linha, com o parágrafo continuando na de baixo: a de baixo é que desce, com o
+//     cursor no começo dela.
+// Devolve a troca { de, ate, texto } a fazer no texto.
+function aoEnter(texto, pos, opcoes = {}) {
+  const linhaDe = texto.lastIndexOf("\n", pos - 1) + 1;
+  let linhaAte = texto.indexOf("\n", pos);
+  if (linhaAte < 0) linhaAte = texto.length;
+  const linhas = texto.split("\n");
+  let numero = 0;
+  for (let i = texto.indexOf("\n"); i >= 0 && i < linhaDe; i = texto.indexOf("\n", i + 1)) numero += 1;
+  const linha = linhas[numero] ?? "";
+  const marcas = marcasPorLinha(linhas)[numero] || [];
+  if (opcoes.autoFormata === false || marcas.includes("F-")) return { de: pos, ate: pos, texto: "\n" };
+  if (pos - linhaDe <= espacosIniciais(linha)) return { de: linhaDe, ate: linhaDe, texto: "\n" };
+  if (linha.startsWith("<") && classificar(linha)) return { de: linhaAte, ate: linhaAte, texto: "\n" };
+
+  const comeco = marcas.includes("R+") ? "  " : " ";
+  if (texto.slice(pos, linhaAte).trim() !== "") return { de: pos, ate: pos, texto: `\n${comeco}` };
+  const proxima = linhas[numero + 1];
+  const continua = ehLinhaDeTexto(proxima) && espacosIniciais(proxima) === 0 && !proxima.startsWith("•");
+  if (continua) return { de: pos, ate: linhaAte + 1, texto: `\n${comeco}` };
+  return { de: pos, ate: linhaAte, texto: `\n${comeco}` };
+}
+
+// "<" numa linha que só tem espaços (o recuo que o Enter pôs): os espaços saem, para o comando
+// começar na coluna 1, onde o programa o reconhece. `digitado` é o que entra (o "<", ou um
+// comando inteiro de uma vez). Devolve a troca, ou null.
+function aoDigitarMenor(texto, pos, digitado = "<") {
+  const de = texto.lastIndexOf("\n", pos - 1) + 1;
+  let ate = texto.indexOf("\n", pos);
+  if (ate < 0) ate = texto.length;
+  const linha = texto.slice(de, ate);
+  if (!linha || linha.trim() !== "") return null;
+  return { de, ate, texto: digitado };
+}
+
 // Palavra em volta do índice (duplo clique): letras, dígitos e hífen interno.
 function palavraEm(texto, indice) {
   const letra = /[\p{L}\p{N}_]/u;
@@ -245,9 +370,15 @@ function palavraEm(texto, indice) {
 }
 
 export {
+  aoDigitarMenor,
+  aoEnter,
   alcanceDaFaixa,
   apagarNaBorda,
+  ehComando,
+  linhaProtegida,
+  moverLinha,
   palavraEm,
+  trocaPreservandoCodigos,
   selecaoNaFaixa,
   editavel,
   foraDeLinhaEscondida,

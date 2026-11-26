@@ -6,7 +6,7 @@ if (partido[0] !== "um texto " || partido[1] !== "longo " || partido[2] !== "dem
 }
 
 if (expandirTab("a\tb") !== "a  b") throw new Error("tab");
-if (centrarPorEspacos("titulo") !== `${" ".repeat(12)}titulo`) throw new Error("doze espaços");
+if (centrarPorEspacos("titulo") !== `${" ".repeat(10)}titulo`) throw new Error("dez espaços");
 if (centrarFisico("aaaa", 10) !== "   aaaa") throw new Error("física");
 if (converter(converter("ação ç é", paraDos), paraWindows) !== "ação ç é") throw new Error("oem");
 

@@ -89,9 +89,7 @@ Até a etapa 6, o editor antigo continuou sendo o padrão e o novo entrava pela 
 
 ### Quebra de página
 
-- **`<P>` inserido pela pessoa:** vira um risco horizontal na tinta e no braille. O risco é tratado como um caractere só:
-  - **Backspace** no começo da página de baixo apaga o `<P>`;
-  - **Delete** no fim da página de cima também apaga.
+- **`<P>` inserido pela pessoa:** vira um risco horizontal na tinta e no braille. É um código como os outros (ver "Comandos e comentários não ocupam linha"): Backspace e Delete encostados nele não o apagam; para tirá-lo, duplo clique no rótulo do risco e esvaziar a caixa.
 - **Quebra automática** (a página encheu): também vira um risco no mesmo lugar visual. A diferença:
   - o risco automático tem um estilo mais discreto (tracejado), para distinguir do `<P>` inserido;
   - durante a edição ela é só visual e se recalcula a cada mudança;
@@ -111,7 +109,7 @@ Até a etapa 6, o editor antigo continuou sendo o padrão e o novo entrava pela 
 
 #### Como ficou (etapa 8)
 
-- **Exceção à palavra inteira:** quando a palavra não cabe na linha seguinte sem deixar a de cima com menos de 10 celas (o pontilhado de um sumário, por exemplo), o corte forçado do original continua valendo, em qualquer linha.
+- **Exceção à palavra inteira:** quando a palavra não cabe na linha seguinte sem deixar a de cima com menos de 10 celas (o pontilhado de um sumário, por exemplo), o corte forçado continua valendo, em qualquer linha.
 - **Quebra que fica automática:** o tradutor trabalha linha a linha do texto, então partir uma linha pode mudar o braille na junção (um ")" sem o "(" na mesma linha). Nesse caso, e quando o pedaço de cima teria só espaços, o Finalizar não grava aquela quebra e o aviso mostra o trecho.
 - **Página em tinta:** a página automática leva a página em tinta da linha que a abriu, que pode vir de um `<nnn>` logo abaixo. Quando o valor difere do que vale no ponto do `<P>`, o Finalizar grava o `<nnn>` certo antes dele (`<0>` para tirar).
 - **Continuação no recuo:** os dois espaços entram quando a primeira linha da página nova começa com os espaços que o recuo acrescenta, conferido no próprio braille.
@@ -135,3 +133,47 @@ Até a etapa 6, o editor antigo continuou sendo o padrão e o novo entrava pela 
 
 - **Paleta das marcações:** a primeira versão sai com cores provisórias para ajuste.
 - **Comandos de página em tinta (`<12>`):** a proposta é mostrar como uma etiqueta discreta na margem, "pág. tinta 12", em vez de fundo, porque eles marcam um ponto e não um bloco.
+
+## Ajustes depois da etapa 8
+
+- **Comandos e comentários não ocupam linha, como no braille:** cada `<R+>`, `<T título>`, `<12>`, `<comentário>`... vira uma etiqueta pequena na divisa entre a linha de cima e a de baixo, no fim da metade da tinta; comandos seguidos dividem a mesma etiqueta. O braille fica corrido. Os códigos não mudam ao editar o texto:
+  - o cursor não entra neles: ←/→ e ↑/↓ pulam os códigos, e um clique na etiqueta não faz nada;
+  - Backspace e Delete encostados num código não fazem nada (também com Alt ou Ctrl). Numa linha em branco encostada num código, é a linha em branco que sai;
+  - apagar, digitar, recortar ou colar por cima de uma seleção que pega códigos (por exemplo, entre duas páginas) tira só o texto: os códigos ficam no lugar, cada um na sua linha. O começo da primeira linha fica antes deles, e o resto da última, depois. Tudo num passo do Ctrl+Z;
+  - **para alterar:** duplo clique na etiqueta (ou no rótulo do `<P>` e da nova numeração) abre a linha do código ali mesmo, na página, com moldura e o cursor no fim. Enter fecha (sem abrir linha nova), Esc fecha devolvendo o que o código tinha, e sair da linha com as setas ou o mouse também fecha. Esvaziada, a linha sai do texto junto com o código. Enquanto está aberta, Backspace no começo e Delete no fim não a juntam com as vizinhas;
+  - **para mudar de lugar:** segurar a etiqueta (ou o rótulo do `<P>`) e arrastar. Uma linha amarela mostra onde ele vai cair; o código vai inteiro, numa linha só dele, antes ou depois da linha do texto apontada (nunca no meio de um parágrafo). Um passo do Ctrl+Z; depois de soltar, o cursor vai para a linha logo depois do código (a tela não sai do lugar), e depois de desfazer o cursor não fica dentro do código;
+  - **para criar:** digitar o código numa linha. Enquanto o cursor está nela, a linha fica aberta; ao dar Enter (ou sair dela), vira etiqueta.
+- **Aviso de redistribuir:** os `<P>` gravados não se movem sozinhos. Quando uma edição deixa a página antes de um `<P>` com menos da metade das linhas (apagou muito texto, ou o texto passou do fim e sobraram poucas linhas numa página nova), aparece uma faixa acima das páginas: "A página I ficou com 9 de 27 linhas antes de uma quebra <P>... as páginas precisam ser redistribuídas", com **Ver** (leva o cursor ao fim da página) e **×**. Páginas que já eram curtas (capa, fim de capítulo) não avisam. O aviso some quando a página volta a encher. A redistribuição em si ainda é manual.
+- **A quebra de página também não ocupa linha:** é um traço colado entre a última linha da página e o cabeçalho da seguinte, com o rótulo em cima.
+- **Linhas que o braille omite** (a linha em branco do topo da página, com "Elimina linhas brancas após o cabeçalho") também aparecem, em branco, na tinta.
+- **"Elimina linhas brancas após o cabeçalho"** vem desligada: a linha em branco depois do cabeçalho fica no braille, como no texto.
+- **Metade da tela para cada lado:** tinta (com as barras das marcações) à esquerda e braille à direita.
+- **Braille do maior tamanho que cabe:** uma linha inteira de celas (as colunas da página) na metade do braille, e os pontos dentro da altura da faixa, que é a mesma da tinta. Recalculado quando a largura da tela, as colunas ou a fonte mudam (`tamanhoDoBraille` no `app.js`).
+- **Enter desce o resto da linha, sem abrir parágrafo** (`aoEnter` no `cursor_pareado.js`). Com o Enter puro, a linha nova, sem espaço no começo, continuava o parágrafo de cima: o primeiro Enter não mudava nada e o segundo pulava uma linha. Agora a linha nova começa com um espaço no texto comum (vai para a margem; com um espaço a mais vira parágrafo) e com dois dentro do `<R+>` (alinhada com as outras linhas do recuo; com um a menos vira item novo). No `<F->` é só a quebra; **Shift+Enter** é a quebra pura. Digitar `<` numa linha que só tem espaços tira os espaços, para o comando começar na coluna 1.
+- **Linhas vazias recebem o cursor e o destaque na tinta:** o lado da tinta ocupa a altura toda da faixa (antes encolhia, e o cursor sumia).
+
+## Conferência com um livro revisado (Araribá Conecta Arte 6, parte 1)
+
+A tinta gerada foi comparada linha a linha com o .docx revisado pela produção, feito a partir do braille. O que estava diferente e como ficou:
+
+- **Interponto: verso sem cabeçalho.** Com interponto, a página par não tem linha de cabeçalho e usa as 28 linhas para o texto. Antes o verso perdia uma linha, e em livro já diagramado (um `<P>` no fim de cada página) sobrava uma página com 2 ou 3 linhas: 92 páginas em vez de 86. O verso continua numerado (`numeroTexto`), só não grava o cabeçalho (`pagina.js`, `comCabecalho`).
+- **Linha vazia no `<F->` é linha em branco** no braille (o sumário perdia todas).
+- **Aspas e parêntese com estado no documento inteiro**: o ")" cujo "(" ficou na linha de cima do texto não vira o parêntese de expressão numérica (que tem uma cela a menos e mudava a quebra da linha). O estado entra na chave dos caches de linha e de parágrafo (`traduzirLinhaDoTexto` e `linhasDoParagrafo` no `pagina.js`, `opcoes.estado` no `motor.js`).
+- **Na tinta (Word):**
+  - linha centralizada no braille vira parágrafo centralizado, sem os espaços; vale também para linha que já está no meio no `<F->` e para o cabeçalho;
+  - linha separadora (só ":") vira travessões, e ":•:•:" vira "—•—•—";
+  - o pontilhado do sumário ("Título ::::: 12") vira uma tabulação com pontilhado até a margem direita;
+  - o grifo vale no `<F->` quando abre e fecha na mesma linha;
+  - "?e" vira "è", e "×" vira a letra x;
+  - a lista de símbolos braille troca o código pelo símbolo em tinta, ou pelos pontos nos sinais exclusivos do braille (tabela `LISTA_DE_SIMBOLOS` no `tinta.js`);
+  - o hífen de corte dentro de um grifo sai grifado.
+
+## Menus e barra de ferramentas
+
+- **Barra de menus:** Arquivo, Editar, Configurar, Revisão e Ajuda. O logo e o nome Braúna ficam à esquerda, da altura das duas linhas (menus e ferramentas).
+- **Editar:** desfazer, recortar, copiar, colar, localizar, substituir, selecionar tudo, os trechos sem ajuste e com recuo, centrar, minúscula/MAIÚSCULA, MAIÚSCULA/minúscula, Texto para Tabela (a refazer) e o submenu **Inserir**: símbolos especiais, página em tinta, anotação, delimitador informático, parênteses auxiliares (?*), nota de transcrição, peça orientação, quadrinhos, separador de textos e variante tipográfica.
+- **Configurar:** inclui a **Codificação** (braille unificado ou antigo), que saiu da barra.
+- **Revisão:** o verificador ortográfico e o dicionário (a repensar).
+- **Ajuda:** a tabela de caracteres (a refazer), além de atualização, manual e sobre.
+- **Barra de ferramentas (uma linha só):** centralizar e alinhar à esquerda, B e I, e os códigos `<P>`, R±, F±, S± e I±.
+- **Saíram:** o menu Gráficos inteiro; de Utilitários, alto-relevo, macro-processador, retoques em braille, conversões DOS/Windows, eliminar formatações e folhear anotações. Os comandos de gráfico que já estão num texto (`<G ...>`) continuam sendo lidos pela paginação.

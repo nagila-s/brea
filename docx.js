@@ -3,7 +3,7 @@
 // entrelinha fixos no próprio arquivo. Também lê de volta o .docx que gravou, para conferir
 // que cada página e cada linha do arquivo batem com o braille.
 
-import { ESTILO, temNaFonte } from "./tinta.js?edicao=1";
+import { ESTILO, temNaFonte } from "./tinta.js?edicao=7";
 
 const TWIPS_POR_CM = 1440 / 2.54;
 const W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
@@ -17,10 +17,14 @@ function xml(texto) {
 function runsDaLinha(linha) {
   const runs = [];
   for (const parte of linha.partes) {
+    if (parte.tab) {
+      runs.push({ tab: parte.tab });
+      continue;
+    }
     for (const caractere of parte.texto) {
       const simbolo = caractere !== " " && !temNaFonte(caractere);
       const ultimo = runs[runs.length - 1];
-      if (ultimo && ultimo.estilo === parte.estilo && ultimo.simbolo === simbolo) ultimo.texto += caractere;
+      if (ultimo && !ultimo.tab && ultimo.estilo === parte.estilo && ultimo.simbolo === simbolo) ultimo.texto += caractere;
       else runs.push({ texto: caractere, estilo: parte.estilo, simbolo });
     }
   }
@@ -47,10 +51,15 @@ function propriedadesDoRun(run, linha, formato) {
   return props.length ? `<w:rPr>${props.join("")}</w:rPr>` : "";
 }
 
+// Tabulação do sumário: vai até a margem direita, com pontilhado, e o número fica encostado nela.
+const PONTILHADO = '<w:r><w:ptab w:relativeTo="margin" w:alignment="right" w:leader="dot"/></w:r>';
+
 function paragrafo(linha, novaPagina, formato) {
-  const pPr = novaPagina ? "<w:pPr><w:pageBreakBefore/></w:pPr>" : "";
-  const runs = runsDaLinha(linha).map((run) => (
-    `<w:r>${propriedadesDoRun(run, linha, formato)}<w:t xml:space="preserve">${xml(run.texto)}</w:t></w:r>`
+  const propriedades = (novaPagina ? "<w:pageBreakBefore/>" : "") + (linha.alinhar === "centro" ? '<w:jc w:val="center"/>' : "");
+  const pPr = propriedades ? `<w:pPr>${propriedades}</w:pPr>` : "";
+  const runs = runsDaLinha(linha).map((run) => (run.tab
+    ? PONTILHADO
+    : `<w:r>${propriedadesDoRun(run, linha, formato)}<w:t xml:space="preserve">${xml(run.texto)}</w:t></w:r>`
   ));
   return `<w:p>${pPr}${runs.join("")}</w:p>`;
 }

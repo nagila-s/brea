@@ -3,19 +3,23 @@
 // (formatar); a tinta só reflete essa decisão. Função pura: não toca no DOM.
 //
 // Tipos de faixa:
-//   texto       braille + tinta; `trechos` diz de que linhas e colunas do texto veio a tinta
+//   texto       braille + tinta; `trechos` diz de que linhas e colunas do texto veio a tinta;
+//               `centro` quando o braille centralizou a linha (10 espaços ou mais no texto)
 //   cabecalho   título e número da página; só leitura
-//   quebra      troca de página; `forcada` quando veio de um <P> (linha = a do <P>)
+//   quebra      troca de página; `forcada` quando veio de um <P> (linha = a do <P>, tinta = o
+//               texto dela)
 //   branco      linha em branco (do texto ou página vazia sem cabeçalho)
 //   nota        aviso da paginação (gráfico)
 //   comentario  <texto qualquer>: só tinta, não vai para o braille
-//   comando     linha de código que não aparece (R±, F±, S±, I±, T, M, página em tinta...)
-//   oculta      linha do texto que não gerou nada (por exemplo, branco tirado do topo da página)
+//   comando     linha de código (R±, F±, S±, I±, T, M, página em tinta...): só tinta, como está
+//               no texto, para poder ser escrita e editada; não vai para o braille
+//   oculta      linha do texto que não gerou nada (por exemplo, branco tirado do topo da página):
+//               aparece em branco na tinta, para o cursor ter onde ficar
 //
 // Toda linha do texto aparece em pelo menos uma faixa, para o editor sempre saber onde ela está.
 
-import { aplicar, classificar } from "./comandos.js?edicao=26";
-import { caractereMeta } from "./motor.js?edicao=26";
+import { aplicar, classificar } from "./comandos.js?edicao=27";
+import { caractereMeta } from "./motor.js?edicao=28";
 
 // Marcações que valem para um bloco e viram fundo colorido no editor.
 function marcasDe(info) {
@@ -146,6 +150,8 @@ function montarFaixas(linhas, formato, opcoes = {}) {
         forcada: pagina.motivo === "forcada",
         motivo: pagina.motivo,
         linha: pagina.quebraLinha ?? null,
+        // O texto do código (<P>, <T+n>), para a linha abrir no duplo clique.
+        tinta: pagina.quebraLinha != null ? linhas[pagina.quebraLinha] ?? "" : "",
         pagina: indice,
       });
     }
@@ -186,6 +192,7 @@ function montarFaixas(linhas, formato, opcoes = {}) {
         marcas: marcas[linha] || [],
         pagina: indice,
       };
+      if (item.centro) faixa.centro = true;
       if (corteNoRecuo(faixa, linhas)) faixa.corteRecuo = true;
       faixas.push(faixa);
     }
@@ -204,9 +211,9 @@ function montarFaixas(linhas, formato, opcoes = {}) {
     if (comando && (comando.tipo === "comentario" || comando.tipo === "anotacao")) {
       extras.push({ tipo: "comentario", braille: [], tinta: texto, linha: numero, pagina: null });
     } else if (comando) {
-      extras.push({ tipo: "comando", codigo: texto.trim(), rotulo: comando.rotulo, linha: numero, pagina: null });
+      extras.push({ tipo: "comando", codigo: texto.trim(), rotulo: comando.rotulo, tinta: texto, linha: numero, pagina: null });
     } else {
-      extras.push({ tipo: "oculta", linha: numero, pagina: null });
+      extras.push({ tipo: "oculta", tinta: texto, linha: numero, pagina: null });
     }
   });
 

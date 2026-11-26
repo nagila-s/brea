@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="200 320 305 320" role="img" aria-label="Braúna">
+  <!-- O B da Braúna: a árvore é uma cela braille vazada no amarelo, com o tronco descendo até a base. -->
+  <defs>
+    <mask id="vazado">
+      <path fill="#fff" d="M220 328 H375 C430 328 472 362 472 405 C472 428 464 450 450 465 C478 480 497 510 497 548 C497 597 456 632 395 632 H220 C213 632 208 627 208 620 V340 C208 333 213 328 220 328 Z"/>
+      <g fill="#000">
+        <circle cx="340" cy="400" r="15"/>
+        <circle cx="294" cy="451" r="15"/>
+        <circle cx="340" cy="451" r="15"/>
+        <circle cx="386" cy="451" r="15"/>
+        <circle cx="250" cy="497" r="15"/>
+        <circle cx="296" cy="497" r="15"/>
+        <circle cx="384" cy="497" r="15"/>
+        <circle cx="428" cy="497" r="15"/>
+        <circle cx="296" cy="546" r="15"/>
+        <circle cx="384" cy="546" r="15"/>
+        <path d="M329 545 a11 11 0 0 1 22 0 V640 H329 Z"/>
+      </g>
+    </mask>
+  </defs>
+  <rect x="200" y="320" width="305" height="320" fill="#f0b81c" mask="url(#vazado)"/>
+</svg>

@@ -26,12 +26,12 @@ const junto = texto(["um texto", "partido"]);
 if (junto.length !== 1 || !junto[0].includes(" ")) throw new Error(`não juntou: ${junto}`);
 
 const separado = texto([" primeira", "segunda"]);
-// 0049BAC0: um espaço inicial fecha o parágrafo anterior, some, e a linha junta as seguintes.
+// Um espaço inicial fecha o parágrafo anterior, some, e a linha junta as seguintes.
 if (separado.length !== 1 || separado[0] !== "primeira segunda") throw new Error(`espaço inicial: ${separado}`);
 const antes = texto(["anterior", " primeira", "segunda"]);
 if (antes.length !== 2 || antes[0] !== "anterior") throw new Error(`espaço inicial não abriu parágrafo: ${antes}`);
 
-// <R+>: as linhas de baixo de cada parágrafo ganham dois espaços (0049BA2C), também no item com 1 espaço.
+// <R+>: as linhas de baixo de cada parágrafo ganham dois espaços, também no item com 1 espaço.
 const recuo = texto(["<*20 caracteres x 8 linhas>", "<R+>", " item um que quebra em tres linhas", "continua", "<R->", " item dois que quebra em tres"]);
 if (recuo.slice(0, 3).some((linha, i) => i > 0 && !linha.startsWith("  ")) || recuo.slice(3).some((linha) => linha.startsWith("  "))) {
   throw new Error(`R±: ${JSON.stringify(recuo)}`);
@@ -43,7 +43,7 @@ if (silabas[0] !== "compu-" || silabas[1] !== "tador") throw new Error(`sílabas
 const sem = texto(["<*16 caracteres x 8 linhas>", "<S->", "extraordinariamente"]);
 const com = texto(["<*16 caracteres x 8 linhas>", "extraordinariamente"]);
 if (sem[0] !== "extraordinariam-" || sem[1] !== "ente") throw new Error(`S- cortou na margem: ${sem}`);
-if (com[0] !== "extraordinaria-" || com[1] !== "mente") throw new Error(`S+ não usou o ponto do programa antigo: ${com}`);
+if (com[0] !== "extraordinaria-" || com[1] !== "mente") throw new Error(`S+ não usou o ponto de separação esperado: ${com}`);
 
 const pagina = formatar([
   "<*10 caracteres x 4 linhas>",
@@ -149,7 +149,7 @@ const depoisDaBranca = formatar([
   "quatro",
   "cinco",
 ], opcoes, true).linhas.filter((linha) => linha.cabecalho);
-// A linha em branco do início já grava a página 1 com o seu cabeçalho (0049B91E), antes do <289>:
+// A linha em branco do início já grava a página 1 com o seu cabeçalho, antes do <289>:
 // o 289 só aparece a partir da página seguinte.
 if (!depoisDaBranca.length || depoisDaBranca[0].texto.includes("#bhi") || !depoisDaBranca.slice(1).every((linha) => linha.texto.includes("#bhi"))) {
   throw new Error(`página em tinta: ${JSON.stringify(depoisDaBranca.map((linha) => linha.texto))}`);
@@ -162,7 +162,7 @@ const noBuffer = formatar(["um dois", "<289>", "tres"], { ...opcoes, colunasPadr
 if (!noBuffer[0].texto.includes("#bhi")) throw new Error(`tinta do buffer: ${noBuffer[0].texto}`);
 
 const semNumero = formatar(["<*20 caracteres x 6 linhas>", "<289>", "<T->", "linha"], opcoes, true).linhas;
-// 0049B36B: com <T-> não há linha de cabeçalho, nem para a página em tinta; o corpo usa as 6 linhas.
+// Com <T-> não há linha de cabeçalho, nem para a página em tinta; o corpo usa as 6 linhas.
 const faixaSem = semNumero.filter((linha) => linha.cabecalho);
 if (faixaSem.length !== 0) throw new Error(`T- deixou cabeçalho: ${JSON.stringify(faixaSem.map((linha) => linha.texto))}`);
 const cheia = texto(["<*20 caracteres x 6 linhas>", "<289>", "<T->", "<F->", "a", "b", "c", "d", "e", "f", "g"]);
@@ -176,7 +176,7 @@ if (romana.length !== 1 || romana[0].texto.includes("#") || !romana[0].texto.end
   throw new Error(`T*4: ${JSON.stringify(romana.map((linha) => linha.texto))}`);
 }
 
-// Bitsets do hífen lidos do EXE em 0x49B888: "camisola" parte em cami-/sola.
+// Separação de sílabas: "camisola" parte em cami-/sola.
 const camisola = texto(["<*32 caracteres x 8 linhas>", "aaaaaaaaaa aaaaaaaaaaaaaaa camisola"]);
 if (camisola[0] !== "aaaaaaaaaa aaaaaaaaaaaaaaa cami-" || camisola[1] !== "sola") throw new Error(`hífen: ${camisola}`);
 
@@ -186,7 +186,7 @@ if (naoQuebra[0] !== "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" || naoQuebra[1] !== "x yy"
 
 // <I+> liga a maiúscula inglesa (ponto 6, meta ","); <I-> volta ao sinal 46.
 const ingles = formatar(["<I+>", "Abc", "<I->", "Abc"], { codigo: "unificado" }, true).linhas.filter((linha) => linha.tipo === "tinta" && !linha.cabecalho).map((linha) => linha.texto);
-// <I-> não fecha o parágrafo (0049BC94): as duas linhas juntam, cada uma com o seu modo.
+// <I-> não fecha o parágrafo: as duas linhas juntam, cada uma com o seu modo.
 if (ingles.length !== 1 || ingles[0] !== ",abc .abc") throw new Error(`I±: ${ingles}`);
 
 // Só P, T, F, R, G e M fecham o parágrafo; S, I, página em tinta, anotação e comentário não.
@@ -204,7 +204,7 @@ if (notas.some((linha) => linha.tipo === "codigo" && !linha.separador) || !notas
   throw new Error(`comentário no braille: ${JSON.stringify(notas.map((linha) => linha.texto))}`);
 }
 
-// <P> sempre fecha a página, mesmo vazia; a página vazia fica com o número (0049BCE1).
+// <P> sempre fecha a página, mesmo vazia; a página vazia fica com o número.
 const paginasDe = (linhas) => formatar(linhas, { ...opcoes, colunasPadrao: 20, linhasPadrao: 6 }, true);
 const cabecas = (linhas) => paginasDe(linhas).linhas.filter((linha) => linha.cabecalho).map((linha) => linha.texto.trim());
 if (paginasDe(["<P>", "texto"]).paginas !== 2 || cabecas(["<P>", "texto"]).join() !== "#a,#b") throw new Error("<P> no início");
@@ -213,11 +213,36 @@ if (paginasDe(["texto", "<P>"]).paginas !== 2) throw new Error("<P> no fim");
 if (paginasDe(["<T->", "a", "<P>", "<P>", "b"]).paginas !== 3) throw new Error("página vazia sem cabeçalho");
 if (paginasDe(["<T+3>", "a"]).paginas !== 1 || cabecas(["<T+3>", "a"]).join() !== "#c") throw new Error("<T+3> no início");
 
-// <T*n>/<T+n> sempre reiniciam a contagem em n (0049BEA5), mesmo que n seja o número de antes.
+// <T*n>/<T+n> sempre reiniciam a contagem em n, mesmo que n seja o número de antes.
 const capa = Array.from({ length: 12 }, (_, i) => `capa ${i + 1}`);
 const corpoDe = (rotulo) => Array.from({ length: 12 }, (_, i) => `${rotulo} ${i + 1}`);
 const numeros = formatar(["<F->", ...capa, "<t*1>", ...corpoDe("pre"), "<t+1>", ...corpoDe("cap")], { ...opcoes, colunasPadrao: 34, linhasPadrao: 6 }, true)
   .linhas.filter((linha) => linha.cabecalho).map((linha) => linha.texto.trim());
 if (numeros.join() !== "#a,#b,#c,I,II,III,#a,#b,#c") throw new Error(`reinício da numeração: ${numeros}`);
+
+// Interponto: o verso (página par) não tem cabeçalho e usa todas as linhas para o texto.
+{
+  const fixas = ["<F->", ...Array.from({ length: 20 }, (_, i) => `linha ${i + 1}`)];
+  const inter = formatar(fixas, { ...opcoes, colunasPadrao: 20, linhasPadrao: 6, interponto: true }, true);
+  const corpo = inter.estrutura.map((pagina) => pagina.corpo.length).join();
+  if (corpo !== "5,6,5,4") throw new Error(`interponto: linhas por página ${corpo}`);
+  const cabecas = inter.linhas.filter((linha) => linha.cabecalho).map((linha) => linha.texto.trim()).join();
+  if (cabecas !== "#a,#c") throw new Error(`interponto: cabeçalhos ${cabecas}`);
+  if (inter.estrutura[1].numeroTexto !== "2") throw new Error("interponto: o verso continua numerado");
+  const sem = formatar(fixas, { ...opcoes, colunasPadrao: 20, linhasPadrao: 6 }, true);
+  if (sem.estrutura.map((pagina) => pagina.corpo.length).join() !== "5,5,5,5") throw new Error("sem interponto, toda página tem cabeçalho");
+}
+
+// <F->: a linha vazia continua sendo linha em branco no braille (sumário).
+const fixaComBranco = texto(["<F->", "Unidade 1 ::::: 1", "", "Tema 1 ::::: 2"]);
+if (fixaComBranco.length !== 3 || fixaComBranco[1].trim() !== "") throw new Error(`branco no F-: ${JSON.stringify(fixaComBranco)}`);
+
+// O estado do parêntese passa de uma linha do texto para a outra: o ")"
+// cujo "(" ficou na linha de cima é o parêntese comum (2 celas), não o de expressão numérica.
+{
+  const braille = (linhas) => formatar(linhas, opcoes, false).linhas.filter((linha) => linha.tipo === "braille").map((linha) => linha.texto).join("");
+  if (!braille(["mural (c.", "1932-1934). Acervo"]).includes("⠙⠠⠜")) throw new Error("parêntese aberto na linha de cima");
+  if (braille(["mural c.", "1932-1934). Acervo"]).includes("⠙⠠⠜")) throw new Error("parêntese numérico sem o de abrir");
+}
 
 console.log("ok", junto[0], silabas.join(" / "), paragrafo[0], faixa);
